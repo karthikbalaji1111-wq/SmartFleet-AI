@@ -1,0 +1,13 @@
+# SmartFleet AI backend runtime dependencies (tested with Python 3.11 in the
+# Miniforge "smartfleet" environment).
+fastapi==0.143.0
+starlette==1.7.0
+pydantic==2.14.0
+uvicorn==0.54.0
+websockets==17.2
+
+# Physics engine. PyPI has NO Windows wheels for PyBullet: either install the
+# Visual Studio C++ Build Tools so pip can compile it, or install it from
+# conda-forge first (conda install -c conda-forge pybullet) - pip then sees it
+# as already satisfied (the conda-forge build reports itself as 3.2.5).
+pybullet>=3.2.5

@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual / conda environments (the project uses the Miniforge "smartfleet" env)
+.venv/
+venv/
+env/
+.conda/
+
+# ------------------------------------------------- Secrets & credentials ---
+# Never commit API keys, passwords or credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials*.json
+
+# ----------------------------------------------- Generated sim artifacts ---
+# Robot URDF is regenerated from config/warehouse.json at runtime.
+simulation/generated/
+*.urdf.tmp
+*.bullet
+recordings/
+logs/
+*.log
+
+# -------------------------------------------------------------- Frontend ---
+node_modules/
+frontend/dist/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+
+# ------------------------------------------------------- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Claude Code config (machine-specific paths)
+.claude/

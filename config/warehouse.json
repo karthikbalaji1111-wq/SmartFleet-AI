@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "units": {
+    "length": "m",
+    "angle": "rad",
+    "time": "s",
+    "mass": "kg"
+  },
+  "frame": {
+    "up_axis": "z",
+    "description": "Right-handed world frame with Z up. Origin at the centre of the warehouse floor (z = 0 on the floor surface). +X points east towards the loading/delivery docks, +Y points north. Yaw is measured counter-clockwise about +Z; yaw = 0 faces +X. Robot body frame: +X forward, +Y left, +Z up, origin on the drive-wheel axle midpoint."
+  },
+  "warehouse": {
+    "name": "SmartFleet Demo Warehouse",
+    "floor": {
+      "size_x": 24.0,
+      "size_y": 16.0,
+      "grid_spacing": 1.0
+    },
+    "walls": {
+      "height": 3.0,
+      "thickness": 0.2
+    },
+    "rack_types": {
+      "tote-shelving-4L": {
+        "length": 4.8,
+        "depth": 0.6,
+        "height": 2.1,
+        "bays": 2,
+        "post_size": 0.08,
+        "shelf_thickness": 0.04,
+        "levels": [0.40, 0.85, 1.30, 1.75]
+      }
+    },
+    "racks": [
+      { "id": "A1", "type": "tote-shelving-4L", "center": [-7.0, 5.5], "axis": "x" },
+      { "id": "A2", "type": "tote-shelving-4L", "center": [0.0, 5.5], "axis": "x" },
+      { "id": "B1", "type": "tote-shelving-4L", "center": [-7.0, 2.0], "axis": "x" },
+      { "id": "B2", "type": "tote-shelving-4L", "center": [0.0, 2.0], "axis": "x" },
+      { "id": "C1", "type": "tote-shelving-4L", "center": [-7.0, -1.5], "axis": "x" },
+      { "id": "C2", "type": "tote-shelving-4L", "center": [0.0, -1.5], "axis": "x" },
+      { "id": "D1", "type": "tote-shelving-4L", "center": [-7.0, -5.0], "axis": "x" },
+      { "id": "D2", "type": "tote-shelving-4L", "center": [0.0, -5.0], "axis": "x" }
+    ],
+    "zones": [
+      { "id": "loading", "kind": "loading", "label": "LOADING / INBOUND", "center": [9.0, 4.0], "size": [4.0, 5.0] },
+      { "id": "delivery", "kind": "delivery", "label": "DELIVERY / OUTBOUND", "center": [9.0, -4.0], "size": [4.0, 5.0] },
+      { "id": "home", "kind": "home", "label": "ROBOT HOME", "center": [5.0, 0.0], "size": [1.6, 1.4] }
+    ],
+    "stations": [
+      { "id": "inbound-stand", "zone": "loading", "center": [10.4, 4.0], "size": [0.8, 0.6, 0.7] },
+      { "id": "outbound-stand", "zone": "delivery", "center": [10.4, -4.0], "size": [0.8, 0.6, 0.7] }
+    ],
+    "container": {
+      "id": "TOTE-0001",
+      "size": [0.40, 0.30, 0.22],
+      "mass": 2.0,
+      "station": "inbound-stand"
+    }
+  },
+  "robot": {
+    "id": "amr-01",
+    "name": "SF-1 Autonomous Storage Robot",
+    "start_pose": { "x": 5.0, "y": 0.0, "yaw": 3.141592653589793 },
+    "chassis": {
+      "length": 0.90,
+      "width": 0.56,
+      "height": 0.24,
+      "ground_clearance": 0.04,
+      "mass": 60.0
+    },
+    "wheels": {
+      "radius": 0.10,
+      "width": 0.05,
+      "track_width": 0.62,
+      "mass": 2.0,
+      "max_torque": 25.0,
+      "max_velocity": 20.0,
+      "lateral_friction": 1.0
+    },
+    "casters": {
+      "radius": 0.04,
+      "offset_x": 0.36,
+      "mass": 0.5
+    },
+    "mast": {
+      "height": 1.92,
+      "offset_x": -0.38,
+      "upright_size": 0.06,
+      "upright_spacing": 0.48,
+      "mass": 12.0
+    },
+    "lift": {
+      "lower": 0.0,
+      "upper": 1.60,
+      "max_velocity": 0.30,
+      "max_force": 2000.0,
+      "carriage_mass": 6.0
+    },
+    "forks": {
+      "length": 0.70,
+      "tine_width": 0.06,
+      "tine_thickness": 0.03,
+      "tine_spacing": 0.24,
+      "lower": 0.0,
+      "upper": 0.60,
+      "max_velocity": 0.25,
+      "max_force": 800.0,
+      "mass": 4.0
+    },
+    "limits": {
+      "max_linear_velocity": 1.0,
+      "max_angular_velocity": 1.5,
+      "max_linear_acceleration": 1.0,
+      "max_angular_acceleration": 3.0,
+      "max_linear_deceleration": 2.0,
+      "max_angular_deceleration": 5.0,
+      "min_command_duration": 0.05,
+      "max_command_duration": 2.0,
+      "default_command_duration": 0.5
+    }
+  },
+  "simulation": {
+    "physics_hz": 240,
+    "gravity": 9.81,
+    "solver_iterations": 50,
+    "settle_steps": 120,
+    "floor_friction": 1.0,
+    "loop_hz": 60,
+    "max_steps_per_tick": 40,
+    "telemetry_hz": 30
+  }
+}

@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+filterwarnings = [
+    # PyBullet's SWIG bindings emit these on Python 3.12+; not actionable here.
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+    # Starlette 1.7 nudges towards httpx2; httpx 0.28 is still fully supported.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
