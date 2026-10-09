@@ -45,13 +45,21 @@ class WheelsTelemetry(_Model):
     brake_engaged: bool  # wheels in position-hold because the robot is at rest
 
 
-class ActuatorTelemetry(_Model):
+class MechanismTelemetry(_Model):
+    """Lift or fork prismatic joint, as measured by PyBullet."""
+
     position: float  # measured joint position, m
-    velocity: float
+    velocity: float  # measured joint velocity, m/s
+    target: float  # position target held by the PyBullet motor, m
+    error: float  # target - position, m
+    at_target: bool  # |error| within the configured tolerance
+    state: Literal["holding", "moving", "blocked"]
+    fault: Literal["stalled", "overload", "tilt"] | None  # why it is blocked (cleared by the next command)
+    applied_force: float  # motor force reported by PyBullet, N
     lower: float
     upper: float
-    target: float
-    mode: Literal["hold"]  # Milestone 1: actuator held at target; motion control deferred
+    default: float
+    max_velocity: float
 
 
 class CommandTelemetry(_Model):
@@ -68,8 +76,9 @@ class RobotState(_Model):
     pose: PoseTelemetry
     velocity: VelocityTelemetry
     wheels: WheelsTelemetry
-    lift: ActuatorTelemetry
-    forks: ActuatorTelemetry
+    lift: MechanismTelemetry
+    forks: MechanismTelemetry
+    fork_surface_height: float  # top of the fork tines above the floor, from the fork link pose, m
     command: CommandTelemetry
 
 

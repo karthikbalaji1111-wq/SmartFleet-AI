@@ -1,4 +1,10 @@
-import type { ControlResponse, ReadyResponse, WarehouseConfigResponse } from './types';
+import type {
+  ControlResponse,
+  MechanismCommandResponse,
+  MechanismName,
+  ReadyResponse,
+  WarehouseConfigResponse,
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -45,10 +51,25 @@ export const api = {
   pause: () => request<ControlResponse>('/api/simulation/pause', { method: 'POST' }),
   reset: () => request<ControlResponse>('/api/simulation/reset', { method: 'POST' }),
   stop: () => request<ControlResponse>('/api/robot/stop', { method: 'POST' }),
+  estop: () => request<ControlResponse>('/api/robot/estop', { method: 'POST' }),
   velocity: (linear: number, angular: number, duration: number) =>
     request<unknown>('/api/robot/velocity', {
       method: 'POST',
       body: JSON.stringify({ linear, angular, duration }),
+    }),
+  mechanismTarget: (name: MechanismName, position: number) =>
+    request<MechanismCommandResponse>(`/api/robot/${name}/target`, {
+      method: 'POST',
+      body: JSON.stringify({ position }),
+    }),
+  mechanismJog: (name: MechanismName, delta: number) =>
+    request<MechanismCommandResponse>(`/api/robot/${name}/jog`, {
+      method: 'POST',
+      body: JSON.stringify({ delta }),
+    }),
+  mechanismStop: (name?: MechanismName) =>
+    request<{ message: string }>(name ? `/api/robot/${name}/stop` : '/api/robot/mechanisms/stop', {
+      method: 'POST',
     }),
 };
 

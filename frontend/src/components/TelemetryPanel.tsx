@@ -1,28 +1,5 @@
-import type { ActuatorTelemetry, WorldState } from '../api/types';
+import type { WorldState } from '../api/types';
 import { num } from './format';
-
-function Gauge({ label, act, unit = 'm' }: { label: string; act: ActuatorTelemetry | undefined; unit?: string }) {
-  const span = act ? act.upper - act.lower : 1;
-  const pct = act ? Math.max(0, Math.min(100, ((act.position - act.lower) / span) * 100)) : 0;
-  return (
-    <div className="gauge">
-      <div className="gauge-head">
-        <span>{label}</span>
-        <span className="mono">
-          {num(act?.position, 3)} {unit}
-          <span className="tag tag--muted">{act ? act.mode.toUpperCase() : '—'}</span>
-        </span>
-      </div>
-      <div className="gauge-track" role="meter" aria-valuemin={act?.lower} aria-valuemax={act?.upper} aria-valuenow={act?.position}>
-        <div className="gauge-fill" style={{ width: `${pct}%` }} />
-      </div>
-      <div className="gauge-scale mono">
-        <span>{num(act?.lower, 2)}</span>
-        <span>limit {num(act?.upper, 2)} {unit}</span>
-      </div>
-    </div>
-  );
-}
 
 export function TelemetryPanel({ world, robotId }: { world: WorldState | null | undefined; robotId?: string }) {
   const r = world?.robot;
@@ -66,13 +43,13 @@ export function TelemetryPanel({ world, robotId }: { world: WorldState | null | 
           <small>rad/s measured{r?.wheels.brake_engaged ? ' · parking brake' : ''}</small>
         </div>
       </div>
-      <Gauge label="Lift height" act={r?.lift} />
-      <Gauge label="Fork extension" act={r?.forks} />
-      <p className="hint">
-        Lift and forks are physical prismatic joints held at their lower limits. Commanded lift/fork motion is
-        deferred to a later milestone.
-      </p>
       <dl className="kv kv--compact">
+        <div>
+          <dt>Lift / fork extension</dt>
+          <dd className="mono">
+            {num(r?.lift.position, 3)} / {num(r?.forks.position, 3)} m
+          </dd>
+        </div>
         <div>
           <dt>Tilt (roll / pitch)</dt>
           <dd className="mono">

@@ -10,9 +10,48 @@ from collections import deque
 from datetime import datetime, timezone
 
 from simulation.config import AppConfig, get_config
+from simulation.mechanisms import MECHANISMS, MechanismCommand, MechanismName
 from simulation.world import SimulationWorld, pybullet_available
 
-from .schemas import CommandResponse, EventLevel, EventModel, SimulationSnapshot, SimulationStatus, WheelTargets
+from .schemas import (
+    CommandResponse,
+    EventLevel,
+    EventModel,
+    MechanismCommandResponse,
+    SimulationSnapshot,
+    SimulationStatus,
+    WheelTargets,
+)
+
+_MOTION_WORDS: dict[MechanismName, tuple[str, str]] = {"lift": ("raising", "lowering"), "forks": ("extending", "retracting")}
+
+
+def _describe(cmd: MechanismCommand) -> str:
+    label = "Lift" if cmd.mechanism == "lift" else "Forks"
+    up, down = _MOTION_WORDS[cmd.mechanism]
+    if abs(cmd.target - cmd.position) < 1e-4:
+        motion = "holding"
+    else:
+        motion = up if cmd.target > cmd.position else down
+    clamped = " (clamped at travel limit)" if cmd.clamped else ""
+    return f"{label} target {_m(cmd.target)} m{clamped}: {motion} from {_m(cmd.position)} m"
+
+
+def _m(value: float) -> str:
+    """Metres with 3 decimals, without '-0.000' from tiny negative joint noise."""
+    return f"{round(value, 3) + 0.0:.3f}"
+
+
+def _response(cmd: MechanismCommand, message: str) -> MechanismCommandResponse:
+    return MechanismCommandResponse(
+        accepted=True,
+        mechanism=cmd.mechanism,
+        target=cmd.target,
+        previous_target=cmd.previous_target,
+        position=cmd.position,
+        clamped=cmd.clamped,
+        message=message,
+    )
 
 
 class SimulationUnavailableError(RuntimeError):
@@ -129,9 +168,12 @@ class SimulationService:
             if self.status == "paused":
                 return "Simulation already paused"
             self.world.stop()  # request cancelled; on resume the robot brakes along its profile
+            self.world.stop_mechanisms()  # lift/forks hold where they are
             self.status = "paused"
             self._last_logged_command = None
-            self.events.add("info", "simulation", "Simulation paused; drive request cancelled", self.world.sim_time)
+            self.events.add(
+                "info", "simulation", "Simulation paused; drive request cancelled, lift/forks holding", self.world.sim_time
+            )
             return "Simulation paused"
 
     def reset(self) -> str:
@@ -147,11 +189,7 @@ class SimulationService:
 
     def command_velocity(self, linear: float, angular: float, duration: float) -> CommandResponse:
         with self._lock:
-            self._require_ready()
-            if self.status != "running":
-                raise InvalidStateError(
-                    f"Drive commands are only accepted while the simulation is running (status: {self.status})"
-                )
+            self._require_running("Drive commands")
             command = self.world.set_velocity_command(linear, angular, duration)
             targets = self.world.kinematics.wheel_speeds(command.linear, command.angular)
             key = (round(command.linear, 3), round(command.angular, 3))
@@ -174,6 +212,8 @@ class SimulationService:
             )
 
     def stop_robot(self) -> str:
+        """Cancel the drive request (the manual-drive release). Lift and forks
+        are not affected, so releasing a drive key never interrupts them."""
         with self._lock:
             self._require_ready()
             self.world.stop()
@@ -181,6 +221,51 @@ class SimulationService:
                 self.events.add("info", "command", "Stop: drive request cancelled", self.world.sim_time)
             self._last_logged_command = (0.0, 0.0)
             return "Robot stop requested"
+
+    def emergency_stop(self) -> str:
+        """Stop all robot motion: brake the chassis and hold the lift and forks."""
+        with self._lock:
+            self._require_ready()
+            self.world.stop()
+            state = self.world.get_robot_state()
+            moving = [name for name in MECHANISMS if getattr(state, name).state == "moving"]
+            self.world.stop_mechanisms()
+            self._last_logged_command = (0.0, 0.0)
+            held = f"; {' and '.join(moving)} stopped" if moving else ""
+            self.events.add("warning", "command", f"E-stop: drive cancelled, lift and forks holding{held}", self.world.sim_time)
+            return "All robot motion stopped (drive cancelled, lift and forks holding)"
+
+    # ------------------------------------------------------------------ #
+    # Lift and forks
+    # ------------------------------------------------------------------ #
+    def command_mechanism(self, name: MechanismName, position: float) -> MechanismCommandResponse:
+        with self._lock:
+            self._require_running("Lift/fork commands")
+            cmd = self.world.set_mechanism_target(name, position)
+            message = _describe(cmd)
+            self.events.add("info", "mechanism", message, self.world.sim_time)
+            return _response(cmd, message)
+
+    def jog_mechanism(self, name: MechanismName, delta: float) -> MechanismCommandResponse:
+        with self._lock:
+            self._require_running("Lift/fork commands")
+            cmd = self.world.jog_mechanism(name, delta)
+            message = f"Jog {delta:+.3f} m. {_describe(cmd)}"
+            self.events.add("warning" if cmd.clamped else "info", "mechanism", message, self.world.sim_time)
+            return _response(cmd, message)
+
+    def stop_mechanisms(self, names: tuple[MechanismName, ...] = MECHANISMS) -> list[MechanismCommandResponse]:
+        """Hold the given mechanisms at their measured positions (any state)."""
+        with self._lock:
+            self._require_ready()
+            results = []
+            for name in names:
+                cmd = self.world.stop_mechanism(name)
+                label = "Lift" if name == "lift" else "Forks"
+                message = f"{label} stopped: holding at {_m(cmd.target)} m"
+                self.events.add("info", "mechanism", message, self.world.sim_time)
+                results.append(_response(cmd, message))
+            return results
 
     def snapshot(self) -> SimulationSnapshot:
         with self._lock:
@@ -208,6 +293,11 @@ class SimulationService:
         if not self.ready:
             raise SimulationUnavailableError(self.init_error or "Physics world not initialized")
 
+    def _require_running(self, what: str) -> None:
+        self._require_ready()
+        if self.status != "running":
+            raise InvalidStateError(f"{what} are only accepted while the simulation is running (status: {self.status})")
+
     async def _run_loop(self) -> None:
         """Advance physics in real time using a fixed-step accumulator."""
         sim = self.config.simulation
@@ -228,6 +318,8 @@ class SimulationService:
                         accumulator -= steps * dt
                     try:
                         self.world.step(steps)
+                        for level, message in self.world.drain_events():
+                            self.events.add(level, "mechanism", message, self.world.sim_time)
                     except Exception as exc:
                         self.status = "paused"
                         self.events.add("error", "physics", f"Physics step failed, simulation paused: {exc}")

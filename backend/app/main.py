@@ -17,13 +17,20 @@ from fastapi.responses import JSONResponse
 from simulation.config import AppConfig
 from simulation.diff_drive import CommandError
 from simulation.geometry import container_initial_position
+from simulation.mechanisms import lift_presets
 from simulation.world import pybullet_available
 
 from . import __version__
 from .schemas import (
     CommandResponse,
     ControlResponse,
+    ForkJogRequest,
+    ForkTargetRequest,
     HealthResponse,
+    LiftJogRequest,
+    LiftTargetRequest,
+    MechanismCommandResponse,
+    MechanismStopResponse,
     ReadyResponse,
     SimulationSnapshot,
     TelemetryMessage,
@@ -113,6 +120,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             static_geometry=service.world.static_geometry,
             robot_model=service.world.description,
             container_initial_position=container_initial_position(cfg.warehouse),
+            lift_presets=lift_presets(cfg),
         )
 
     # ------------------------------------------------------------------ #
@@ -147,8 +155,58 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.post("/api/robot/stop", response_model=ControlResponse, tags=["robot"])
     async def robot_stop() -> ControlResponse:
+        """Cancel the drive request and brake (lift and forks are unaffected)."""
         message = service.stop_robot()
         return ControlResponse(message=message, snapshot=service.snapshot())
+
+    @app.post("/api/robot/estop", response_model=ControlResponse, tags=["robot"])
+    async def robot_estop() -> ControlResponse:
+        """Stop all robot motion: brake the chassis and hold the lift and forks. Allowed in any state."""
+        message = service.emergency_stop()
+        return ControlResponse(message=message, snapshot=service.snapshot())
+
+    # ------------------------------------------------------------------ #
+    # Lift and forks (PyBullet position motors on prismatic joints)
+    # ------------------------------------------------------------------ #
+    @app.post("/api/robot/lift/target", response_model=MechanismCommandResponse, tags=["mechanisms"])
+    async def lift_target(request: LiftTargetRequest) -> MechanismCommandResponse:
+        """Raise or lower the lift carriage to an absolute position (m)."""
+        return service.command_mechanism("lift", request.position)
+
+    @app.post("/api/robot/lift/jog", response_model=MechanismCommandResponse, tags=["mechanisms"])
+    async def lift_jog(request: LiftJogRequest) -> MechanismCommandResponse:
+        """Move the lift target by a bounded increment (saturates at the travel limit)."""
+        return service.jog_mechanism("lift", request.delta)
+
+    @app.post("/api/robot/lift/stop", response_model=MechanismStopResponse, tags=["mechanisms"])
+    async def lift_stop() -> MechanismStopResponse:
+        """Hold the lift at its current measured position."""
+        stopped = service.stop_mechanisms(("lift",))
+        return MechanismStopResponse(message=stopped[0].message, stopped=stopped, snapshot=service.snapshot())
+
+    @app.post("/api/robot/forks/target", response_model=MechanismCommandResponse, tags=["mechanisms"])
+    async def forks_target(request: ForkTargetRequest) -> MechanismCommandResponse:
+        """Extend or retract the forks to an absolute position (m)."""
+        return service.command_mechanism("forks", request.position)
+
+    @app.post("/api/robot/forks/jog", response_model=MechanismCommandResponse, tags=["mechanisms"])
+    async def forks_jog(request: ForkJogRequest) -> MechanismCommandResponse:
+        """Move the fork target by a bounded increment (saturates at the travel limit)."""
+        return service.jog_mechanism("forks", request.delta)
+
+    @app.post("/api/robot/forks/stop", response_model=MechanismStopResponse, tags=["mechanisms"])
+    async def forks_stop() -> MechanismStopResponse:
+        """Hold the forks at their current measured position."""
+        stopped = service.stop_mechanisms(("forks",))
+        return MechanismStopResponse(message=stopped[0].message, stopped=stopped, snapshot=service.snapshot())
+
+    @app.post("/api/robot/mechanisms/stop", response_model=MechanismStopResponse, tags=["mechanisms"])
+    async def mechanisms_stop() -> MechanismStopResponse:
+        """Hold both the lift and the forks at their current measured positions."""
+        stopped = service.stop_mechanisms()
+        return MechanismStopResponse(
+            message="Lift and forks holding", stopped=stopped, snapshot=service.snapshot()
+        )
 
     # ------------------------------------------------------------------ #
     # Live telemetry

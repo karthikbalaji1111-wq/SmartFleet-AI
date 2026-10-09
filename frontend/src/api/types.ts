@@ -44,6 +44,25 @@ export interface MotionLimits {
   default_command_duration: number;
 }
 
+export interface ActuatorConfig {
+  lower: number;
+  upper: number;
+  default_position: number;
+  position_tolerance: number;
+  max_jog_step: number;
+  max_velocity: number;
+  max_force: number;
+}
+
+export type MechanismName = 'lift' | 'forks';
+
+export interface LiftPreset {
+  id: string;
+  label: string;
+  position: number;
+  surface_height: number;
+}
+
 export interface AppConfig {
   frame: { up_axis: 'z'; description: string };
   warehouse: {
@@ -61,8 +80,8 @@ export interface AppConfig {
     name: string;
     start_pose: { x: number; y: number; yaw: number };
     wheels: { radius: number; track_width: number };
-    lift: { lower: number; upper: number };
-    forks: { lower: number; upper: number };
+    lift: ActuatorConfig;
+    forks: ActuatorConfig;
     limits: MotionLimits;
   };
   simulation: { physics_hz: number; telemetry_hz: number };
@@ -119,6 +138,7 @@ export interface WarehouseConfigResponse {
   static_geometry: StaticBox[];
   robot_model: RobotModel;
   container_initial_position: Vec3;
+  lift_presets: LiftPreset[];
 }
 
 // ------------------------------------------------------------- telemetry ---
@@ -128,13 +148,20 @@ export interface JointTelemetry {
   applied_effort: number;
 }
 
-export interface ActuatorTelemetry {
+/** Lift or fork prismatic joint, measured by PyBullet. */
+export interface MechanismTelemetry {
   position: number;
   velocity: number;
+  target: number;
+  error: number;
+  at_target: boolean;
+  state: 'holding' | 'moving' | 'blocked';
+  fault: 'stalled' | 'overload' | 'tilt' | null;
+  applied_force: number;
   lower: number;
   upper: number;
-  target: number;
-  mode: 'hold';
+  default: number;
+  max_velocity: number;
 }
 
 export interface RobotState {
@@ -161,8 +188,9 @@ export interface RobotState {
     target_right: number;
     brake_engaged: boolean;
   };
-  lift: ActuatorTelemetry;
-  forks: ActuatorTelemetry;
+  lift: MechanismTelemetry;
+  forks: MechanismTelemetry;
+  fork_surface_height: number;
   command: {
     active: boolean;
     target_linear: number;
@@ -215,6 +243,16 @@ export interface TelemetryMessage {
 export interface ControlResponse {
   message: string;
   snapshot: SimulationSnapshot;
+}
+
+export interface MechanismCommandResponse {
+  accepted: boolean;
+  mechanism: MechanismName;
+  target: number;
+  previous_target: number;
+  position: number;
+  clamped: boolean;
+  message: string;
 }
 
 export interface ReadyResponse {
