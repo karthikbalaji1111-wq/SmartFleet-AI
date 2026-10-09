@@ -273,6 +273,81 @@ class SimulationConfig(_Model):
         return 1.0 / self.physics_hz
 
 
+# --------------------------------------------------------------------------- #
+# Navigation
+# --------------------------------------------------------------------------- #
+class GridConfig(_Model):
+    resolution: float = Field(gt=0.01, le=0.5)  # m per occupancy cell
+    clearance_margin: float = Field(ge=0)  # extra clearance beyond the robot's footprint radius, m
+    preferred_clearance: float = Field(ge=0)  # beyond the hard clearance, cells closer than this cost more, m
+    proximity_weight: float = Field(ge=0)  # extra cost factor at the hard clearance limit (0 = plain A*)
+    allow_diagonal: bool = True
+    start_snap_radius: float = Field(ge=0)  # robot may start this far inside the inflated zone, m
+    goal_snap_radius: float = Field(ge=0)  # floor-picked goals may be moved this far to free space, m
+
+    @model_validator(mode="after")
+    def _check_margin(self) -> GridConfig:
+        # A point anywhere in a free cell is at most half a cell diagonal closer to an
+        # obstacle than the cell centre; the margin must absorb that discretisation.
+        if self.clearance_margin < self.resolution * math.sqrt(2) / 2:
+            raise ValueError("clearance_margin must be at least half a grid cell diagonal")
+        return self
+
+
+class FollowerConfig(_Model):
+    control_hz: int = Field(ge=5, le=240)  # path-follower update rate
+    cruise_speed: float = Field(gt=0)  # m/s, must not exceed robot.limits.max_linear_velocity
+    max_turn_rate: float = Field(gt=0)  # rad/s, must not exceed robot.limits.max_angular_velocity
+    heading_gain: float = Field(gt=0)  # angular rate per rad of heading error, 1/s
+    rotate_in_place_threshold: float = Field(gt=0, lt=math.pi / 2)  # rad; larger errors turn on the spot
+    waypoint_tolerance: float = Field(gt=0)  # m; intermediate waypoint counts as reached
+    goal_tolerance: float = Field(gt=0)  # m; final position tolerance
+    heading_tolerance: float = Field(gt=0)  # rad; final heading tolerance (destinations with yaw)
+    braking_fraction: float = Field(gt=0, le=1)  # share of max_linear_deceleration used for planned slowdowns
+    max_cross_track_error: float = Field(gt=0)  # m; farther from the route aborts navigation
+    progress_timeout: float = Field(gt=0)  # s without progress before navigation fails
+    min_progress: float = Field(gt=0)  # m (or rad while turning) that counts as progress
+    command_duration: float = Field(gt=0)  # s; dead-man duration of each autonomous drive command
+
+
+class TravelConfig(_Model):
+    """Conservative travel interlock: autonomous driving only in this configuration."""
+
+    max_lift: float = Field(ge=0)  # m, lift joint position
+    max_fork_extension: float = Field(ge=0)  # m, fork joint position
+
+
+class DestinationConfig(_Model):
+    id: str = Field(min_length=1)
+    label: str
+    kind: Literal["home", "aisle", "corridor", "staging"]
+    x: float
+    y: float
+    yaw: float | None = None  # optional final heading, rad
+
+
+class NavigationConfig(_Model):
+    grid: GridConfig
+    controller: FollowerConfig
+    travel: TravelConfig
+    destinations: tuple[DestinationConfig, ...]
+
+    @model_validator(mode="after")
+    def _check(self) -> NavigationConfig:
+        ids = [d.id for d in self.destinations]
+        if len(ids) != len(set(ids)):
+            raise ValueError("navigation destination ids must be unique")
+        c = self.controller
+        if c.goal_tolerance > c.waypoint_tolerance:
+            raise ValueError("goal_tolerance must not exceed waypoint_tolerance")
+        if c.command_duration < 2.0 / c.control_hz:
+            raise ValueError("command_duration must cover at least two controller periods")
+        return self
+
+    def destination(self, destination_id: str) -> DestinationConfig | None:
+        return next((d for d in self.destinations if d.id == destination_id), None)
+
+
 class FrameConfig(_Model):
     up_axis: Literal["z"]
     description: str
@@ -285,6 +360,25 @@ class AppConfig(_Model):
     warehouse: WarehouseConfig
     robot: RobotConfig
     simulation: SimulationConfig
+    navigation: NavigationConfig
+
+    @model_validator(mode="after")
+    def _check_navigation_against_robot(self) -> AppConfig:
+        c, lim = self.navigation.controller, self.robot.limits
+        if c.cruise_speed > lim.max_linear_velocity:
+            raise ValueError("navigation cruise_speed exceeds robot.limits.max_linear_velocity")
+        if c.max_turn_rate > lim.max_angular_velocity:
+            raise ValueError("navigation max_turn_rate exceeds robot.limits.max_angular_velocity")
+        if not lim.min_command_duration <= c.command_duration <= lim.max_command_duration:
+            raise ValueError("navigation command_duration outside robot.limits command duration range")
+        t = self.navigation.travel
+        if not self.robot.lift.lower <= t.max_lift <= self.robot.lift.upper:
+            raise ValueError("navigation travel.max_lift outside the lift travel range")
+        if not self.robot.forks.lower <= t.max_fork_extension <= self.robot.forks.upper:
+            raise ValueError("navigation travel.max_fork_extension outside the fork travel range")
+        if self.robot.lift.default_position > t.max_lift or self.robot.forks.default_position > t.max_fork_extension:
+            raise ValueError("lift/fork default positions must be a safe travel configuration")
+        return self
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

@@ -770,6 +770,103 @@ input[type='range'] {
   cursor: not-allowed;
 }
 
+/* --------------------------------------------------------- navigation --- */
+.badge--right {
+  margin-left: auto;
+}
+
+.badge--info {
+  color: var(--info);
+  border-color: #1f3d66;
+  background: #0f1e33;
+}
+
+.badge--idle {
+  color: var(--muted);
+}
+
+.nav-destination {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.nav-destination select {
+  min-width: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.nav-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.nav-actions {
+  margin-top: 10px;
+}
+
+.nav-progress {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.nav-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+
+.nav-progress-head small {
+  color: var(--muted);
+}
+
+.nav-fill {
+  background: linear-gradient(90deg, #39c5cf, #58a6ff);
+}
+
+.nav-metrics {
+  margin-top: 10px;
+}
+
+.notice--warn {
+  color: #f0c56a;
+  border-color: #5c4613;
+  background: #241b08;
+}
+
+.notice ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.viewport--pick .viewport-canvas canvas {
+  cursor: crosshair;
+}
+
+.viewport-hint--pick {
+  color: var(--accent);
+  border: 1px solid #5c4613;
+}
+
 /* ---------------------------------------------------------------- log --- */
 .log-panel {
   display: flex;

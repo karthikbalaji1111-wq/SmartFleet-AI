@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from simulation.config import AppConfig, Vec3, get_config
+from simulation.config import AppConfig, DestinationConfig, Vec3, get_config
 from simulation.geometry import StaticBox
 from simulation.mechanisms import LiftPreset, MechanismName
+from simulation.navigation.models import NavigationTelemetry, RouteModel
 from simulation.robot_model import RobotDescription
 from simulation.state import WorldState
 
@@ -104,6 +106,26 @@ class ForkJogRequest(_JogRequest):
     )
 
 
+class NavigationPlanRequest(_StrictRequest):
+    """Destination for A* planning: a configured destination id, or a floor
+    point (x, y) in world coordinates, optionally snapped to navigable floor."""
+
+    destination_id: str | None = Field(default=None, min_length=1)
+    x: float | None = Field(default=None, allow_inf_nan=False, description="World X, m")
+    y: float | None = Field(default=None, allow_inf_nan=False, description="World Y, m")
+    yaw: float | None = Field(default=None, ge=-math.pi, le=math.pi, allow_inf_nan=False)
+    snap: bool = Field(default=True, description="Move a point inside a clearance zone to the nearest navigable cell")
+
+    @model_validator(mode="after")
+    def _one_destination(self) -> NavigationPlanRequest:
+        has_point = self.x is not None or self.y is not None
+        if (self.destination_id is None) == (not has_point):
+            raise ValueError("give either destination_id or both x and y")
+        if has_point and (self.x is None or self.y is None):
+            raise ValueError("a floor point needs both x and y")
+        return self
+
+
 class MechanismCommandResponse(BaseModel):
     accepted: bool
     mechanism: MechanismName
@@ -141,6 +163,36 @@ class MechanismStopResponse(BaseModel):
     message: str
     stopped: list[MechanismCommandResponse]
     snapshot: SimulationSnapshot
+
+
+class NavigationResponse(BaseModel):
+    message: str
+    navigation: NavigationTelemetry
+    route: RouteModel | None
+
+
+class NavigationStateResponse(BaseModel):
+    navigation: NavigationTelemetry | None
+    route: RouteModel | None
+    destinations: list[DestinationConfig]
+
+
+class OccupancyGridResponse(BaseModel):
+    """Static occupancy grid used by the planner (prior map, not sensor data)."""
+
+    width: int
+    height: int
+    resolution: float
+    origin: tuple[float, float]  # world (x, y) of the south-west corner of cell (0, 0)
+    inflation_radius: float
+    robot_radius: float
+    encoding: Literal["base64-u8-row-major"]
+    cells: str  # row-major from cell (0, 0) eastwards then northwards: 0 free, 1 inflated, 2 occupied
+
+
+class RouteUpdate(BaseModel):
+    version: int
+    route: RouteModel | None
 
 
 class WheelTargets(BaseModel):
@@ -191,3 +243,4 @@ class TelemetryMessage(BaseModel):
     type: Literal["telemetry"] = "telemetry"
     snapshot: SimulationSnapshot
     events: list[EventModel]
+    route_update: RouteUpdate | None = None  # only when the route changed since the last message

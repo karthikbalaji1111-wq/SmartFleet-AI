@@ -6,6 +6,7 @@ Run from the repository root:  uvicorn backend.app.main:app --port 8000
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from simulation.config import AppConfig
 from simulation.diff_drive import CommandError
 from simulation.geometry import container_initial_position
 from simulation.mechanisms import lift_presets
+from simulation.navigation.grid import grid_for
+from simulation.navigation.navigator import MotionConflictError, NavigationError
 from simulation.world import pybullet_available
 
 from . import __version__
@@ -31,7 +34,12 @@ from .schemas import (
     LiftTargetRequest,
     MechanismCommandResponse,
     MechanismStopResponse,
+    NavigationPlanRequest,
+    NavigationResponse,
+    NavigationStateResponse,
+    OccupancyGridResponse,
     ReadyResponse,
+    RouteUpdate,
     SimulationSnapshot,
     TelemetryMessage,
     VelocityCommandRequest,
@@ -55,7 +63,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="SmartFleet AI Backend",
         version=__version__,
-        description="Milestone 1: PyBullet-backed warehouse and storage robot.",
+        description="PyBullet-backed warehouse, storage robot with lift/forks, and A* navigation.",
         lifespan=lifespan,
     )
     app.state.service = service
@@ -76,6 +84,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def _command_error(_: Request, exc: CommandError) -> JSONResponse:
         service.events.add("warning", "command", f"Rejected command: {exc}")
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(NavigationError)
+    async def _navigation_error(_: Request, exc: NavigationError) -> JSONResponse:
+        # Bad / unreachable destinations are invalid input; the rest conflict with current state.
+        status = 422 if exc.code in ("invalid_destination", "unreachable") else 409
+        service.events.add("warning", "navigation", f"Rejected: {exc}")
+        return JSONResponse(status_code=status, content={"detail": str(exc), "code": exc.code, "reasons": exc.reasons})
+
+    @app.exception_handler(MotionConflictError)
+    async def _motion_conflict(_: Request, exc: MotionConflictError) -> JSONResponse:
+        service.events.add("warning", "command", f"Rejected: {exc}")
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "navigation_active"})
 
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -209,6 +229,55 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
 
     # ------------------------------------------------------------------ #
+    # Autonomous navigation (A* on the static map + path following)
+    # ------------------------------------------------------------------ #
+    def _navigation_response(message: str) -> NavigationResponse:
+        navigation, route = service.navigation_state()
+        return NavigationResponse(message=message, navigation=navigation, route=route)
+
+    @app.get("/api/navigation", response_model=NavigationStateResponse, tags=["navigation"])
+    async def navigation_state() -> NavigationStateResponse:
+        """Navigation status, the active route and the configured destinations."""
+        navigation, route = service.navigation_state()
+        return NavigationStateResponse(
+            navigation=navigation, route=route, destinations=list(cfg.navigation.destinations)
+        )
+
+    @app.get("/api/navigation/grid", response_model=OccupancyGridResponse, tags=["navigation"])
+    async def navigation_grid() -> OccupancyGridResponse:
+        """The static occupancy grid the planner uses (derived from the collision geometry)."""
+        grid = grid_for(cfg)
+        return OccupancyGridResponse(
+            width=grid.width, height=grid.height, resolution=grid.resolution, origin=grid.origin,
+            inflation_radius=grid.inflation_radius, robot_radius=grid.robot_radius,
+            encoding="base64-u8-row-major", cells=base64.b64encode(bytes(grid.cells)).decode("ascii"),
+        )  # fmt: skip
+
+    @app.post("/api/navigation/plan", response_model=NavigationResponse, tags=["navigation"])
+    async def navigation_plan(request: NavigationPlanRequest) -> NavigationResponse:
+        """A* route from the robot's measured position to a destination id or floor point."""
+        message, _ = service.plan_navigation(request)
+        return _navigation_response(message)
+
+    @app.post("/api/navigation/start", response_model=NavigationResponse, tags=["navigation"])
+    async def navigation_start() -> NavigationResponse:
+        """Follow the planned route (requires a running simulation and a safe travel configuration)."""
+        return _navigation_response(service.start_navigation())
+
+    @app.post("/api/navigation/pause", response_model=NavigationResponse, tags=["navigation"])
+    async def navigation_pause() -> NavigationResponse:
+        return _navigation_response(service.pause_navigation())
+
+    @app.post("/api/navigation/resume", response_model=NavigationResponse, tags=["navigation"])
+    async def navigation_resume() -> NavigationResponse:
+        """Continue a paused route if the robot is still on it and travel is safe."""
+        return _navigation_response(service.resume_navigation())
+
+    @app.post("/api/navigation/cancel", response_model=NavigationResponse, tags=["navigation"])
+    async def navigation_cancel() -> NavigationResponse:
+        return _navigation_response(service.cancel_navigation())
+
+    # ------------------------------------------------------------------ #
     # Live telemetry
     # ------------------------------------------------------------------ #
     @app.websocket("/ws/telemetry")
@@ -218,14 +287,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         await ws.accept()
         period = 1.0 / cfg.simulation.telemetry_hz
         last_event_id = 0
+        route_version: int | None = None  # the full route is sent only when it changes
 
         async def send_loop() -> None:
-            nonlocal last_event_id
+            nonlocal last_event_id, route_version
             while True:
                 events = service.events.since(last_event_id)
                 if events:
                     last_event_id = events[-1].id
-                message = TelemetryMessage(snapshot=service.snapshot(), events=events)
+                update = service.route_update(route_version) if service.ready else None
+                route = None
+                if update is not None:
+                    route_version = update[0]
+                    route = RouteUpdate(version=update[0], route=update[1])
+                message = TelemetryMessage(snapshot=service.snapshot(), events=events, route_update=route)
                 await ws.send_text(message.model_dump_json())
                 await asyncio.sleep(period)
 

@@ -2,6 +2,9 @@ import type {
   ControlResponse,
   MechanismCommandResponse,
   MechanismName,
+  NavigationResponse,
+  OccupancyGridData,
+  PlanRequest,
   ReadyResponse,
   WarehouseConfigResponse,
 } from './types';
@@ -71,6 +74,11 @@ export const api = {
     request<{ message: string }>(name ? `/api/robot/${name}/stop` : '/api/robot/mechanisms/stop', {
       method: 'POST',
     }),
+  navigationGrid: () => request<OccupancyGridData>('/api/navigation/grid'),
+  navigationPlan: (body: PlanRequest) =>
+    request<NavigationResponse>('/api/navigation/plan', { method: 'POST', body: JSON.stringify(body) }),
+  navigationAction: (action: 'start' | 'pause' | 'resume' | 'cancel') =>
+    request<NavigationResponse>(`/api/navigation/${action}`, { method: 'POST' }),
 };
 
 export function telemetryUrl(): string {

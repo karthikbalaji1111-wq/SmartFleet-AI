@@ -31,6 +31,9 @@ from .mechanisms import (
     validate_jog,
     validate_target,
 )
+from .navigation.grid import grid_for
+from .navigation.navigator import Destination, MotionConflictError, Navigator
+from .navigation.planner import PlanResult
 from .robot_model import (
     EXPECTED_JOINTS,
     FORK_JOINT,
@@ -159,6 +162,9 @@ class SimulationWorld:
         self.kinematics = DiffDriveKinematics.from_config(self.config.robot)
         self.static_geometry: list[StaticBox] = build_static_geometry(self.config.warehouse)
         self.timestep = self.config.simulation.timestep
+        # Autonomous navigation on the static map (shared, immutable occupancy grid).
+        self.navigator = Navigator(self.config, grid_for(self.config))
+        self._nav_steps = max(1, round(self.config.simulation.physics_hz / self.config.navigation.controller.control_hz))
         self._client: int | None = None
         self._urdf_dir: Path | None = None
         self._urdf_path: Path | None = None
@@ -236,6 +242,8 @@ class SimulationWorld:
         if n < 0:
             raise ValueError("step count must be non-negative")
         for _ in range(n):
+            if self.navigator.active and self._step_count % self._nav_steps == 0:
+                self._navigation_tick()
             self._apply_drive()
             pb.stepSimulation(physicsClientId=self._client)
             self._step_count += 1
@@ -284,6 +292,7 @@ class SimulationWorld:
         """Drive a mechanism to an absolute joint position. Targets outside the
         configured limits raise :class:`CommandError` (never clamped)."""
         self._require_initialized()
+        self._forbid_during_navigation(name)
         target = validate_target(name, position, actuator_config(self.config.robot, name))
         return self._command_mechanism(name, target)
 
@@ -291,6 +300,7 @@ class SimulationWorld:
         """Move a mechanism's target by ``delta``; the result saturates at the
         travel limit (``clamped`` in the result)."""
         self._require_initialized()
+        self._forbid_during_navigation(name)
         cfg = actuator_config(self.config.robot, name)
         step = validate_jog(name, delta, cfg)
         wanted = self._mech_targets[name] + step
@@ -306,6 +316,36 @@ class SimulationWorld:
 
     def stop_mechanisms(self) -> list[MechanismCommand]:
         return [self.stop_mechanism(name) for name in MECHANISMS]
+
+    # ------------------------------------------------------------------ #
+    # Autonomous navigation (A* on the static map + path following)
+    # ------------------------------------------------------------------ #
+    def plan_navigation(self, destination: Destination) -> PlanResult:
+        """Plan a route from the robot's measured position (raises NavigationError)."""
+        self._require_initialized()
+        x, y, _ = self.get_robot_state().pose.position
+        return self.navigator.plan_route((x, y), destination)
+
+    def start_navigation(self) -> None:
+        self._require_initialized()
+        self.navigator.start(self.get_robot_state())
+
+    def pause_navigation(self, reason: str = "paused by operator") -> bool:
+        paused = self.navigator.pause(reason)
+        if paused:
+            self.stop()
+        return paused
+
+    def resume_navigation(self) -> None:
+        self._require_initialized()
+        self.navigator.resume(self.get_robot_state())
+
+    def cancel_navigation(self, reason: str = "cancelled by operator") -> bool:
+        was_active = self.navigator.active
+        cancelled = self.navigator.cancel(reason)
+        if was_active:
+            self.stop()
+        return cancelled
 
     # ------------------------------------------------------------------ #
     # State (always read from PyBullet)
@@ -370,11 +410,13 @@ class SimulationWorld:
         return BodyState(id=self.config.warehouse.container.id, position=tuple(pos), orientation=tuple(orn))
 
     def get_state(self) -> WorldState:
+        robot = self.get_robot_state()
         return WorldState(
             sim_time=self.sim_time,
             step=self._step_count,
-            robot=self.get_robot_state(),
+            robot=robot,
             container=self.get_container_state(),
+            navigation=self.navigator.telemetry(robot),
         )
 
     def static_body_aabb(self, box_id: str) -> tuple[tuple[float, ...], tuple[float, ...]]:
@@ -415,6 +457,7 @@ class SimulationWorld:
         c, sim, robot = self._client, self.config.simulation, self.config.robot
         pb.resetSimulation(physicsClientId=c)
         self._clear_runtime_state()
+        self.navigator.reset()
         pb.setGravity(0.0, 0.0, -sim.gravity, physicsClientId=c)
         pb.setPhysicsEngineParameter(
             fixedTimeStep=sim.timestep,
@@ -493,6 +536,24 @@ class SimulationWorld:
         for name in MECHANISMS:
             pb.resetJointState(body, joints[MECHANISM_JOINTS[name]], self._mech_targets[name], physicsClientId=c)
             self._apply_mechanism_motor(name)
+
+    def _forbid_during_navigation(self, name: MechanismName) -> None:
+        if self.navigator.active:
+            raise MotionConflictError(
+                f"{name} commands are blocked while the robot is navigating; pause or cancel navigation first"
+            )
+
+    def _navigation_tick(self) -> None:
+        """Measured pose -> follower -> the robot's normal drive interface."""
+        nav = self.navigator
+        cmd = nav.tick(self.get_robot_state(), self._nav_steps * self.timestep)
+        if cmd is None or cmd.phase == "arrived":
+            self.stop()  # arrived (settling), finished or failed: brake along the profile
+            return
+        lim = self.config.robot.limits
+        v = max(-lim.max_linear_velocity, min(lim.max_linear_velocity, cmd.linear))
+        w = max(-lim.max_angular_velocity, min(lim.max_angular_velocity, cmd.angular))
+        self.set_velocity_command(v, w, nav.cfg.command_duration)
 
     def _apply_mechanism_motor(self, name: MechanismName) -> None:
         """Force- and velocity-limited PyBullet position motor towards the target."""

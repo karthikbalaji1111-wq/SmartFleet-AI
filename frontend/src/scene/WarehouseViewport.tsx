@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import type { SimulationSnapshot, WarehouseConfigResponse } from '../api/types';
+import type { OccupancyGridData, RouteModel, SimulationSnapshot, WarehouseConfigResponse } from '../api/types';
 import { applyRobotState, buildRobot } from './buildRobot';
+import { buildGridOverlay, buildRouteOverlay, type RouteOverlay } from './buildRoute';
 import { buildContainer, buildRobotMarker, buildWarehouse } from './buildWarehouse';
 import { disposeObject } from './three-utils';
 
@@ -10,6 +11,11 @@ interface Props {
   data: WarehouseConfigResponse | null;
   snapshotRef: RefObject<SimulationSnapshot | null>;
   hasTelemetry: boolean;
+  route: RouteModel | null;
+  grid: OccupancyGridData | null;
+  showGrid: boolean;
+  pickMode: boolean;
+  onPick: (x: number, y: number) => void;
 }
 
 interface ViewApi {
@@ -20,11 +26,15 @@ interface ViewApi {
 /** World (Z up) -> Three.js (Y up): (x, y, z) -> (x, z, -y). */
 const toThree = (x: number, y: number, z: number) => new THREE.Vector3(x, z, -y);
 
-export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
+export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid, showGrid, pickMode, onPick }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const viewApi = useRef<ViewApi | null>(null);
   const followRef = useRef(false);
   const [follow, setFollow] = useState(false);
+  const worldRef = useRef<THREE.Group | null>(null);
+  const overlayRef = useRef<RouteOverlay | null>(null);
+  const pickRef = useRef({ pickMode, onPick });
+  pickRef.current = { pickMode, onPick };
 
   useEffect(() => {
     followRef.current = follow;
@@ -63,8 +73,9 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
       controls.update();
     };
     const top = () => {
+      // Slightly tilted: a camera exactly above its target is degenerate for OrbitControls.
       controls.target.copy(toThree(0, 0, 0));
-      camera.position.copy(toThree(0, -0.01, Math.max(sx, sy) * 1.25));
+      camera.position.copy(toThree(0, -1.5, Math.max(sx, sy) * 1.25));
       controls.update();
     };
     viewApi.current = { overview, top };
@@ -93,6 +104,31 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
     world.add(container);
     const marker = buildRobotMarker(0.62);
     world.add(marker);
+    worldRef.current = world;
+
+    // ---- floor picking (destination selection): a click, not an orbit drag ----
+    const floor = world.getObjectByName('floor');
+    const raycaster = new THREE.Raycaster();
+    let down: { x: number; y: number; t: number } | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      down = { x: e.clientX, y: e.clientY, t: performance.now() };
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const start = down;
+      down = null;
+      if (!start || !pickRef.current.pickMode || !floor || e.button !== 0) return;
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6 || performance.now() - start.t > 600) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const hit = raycaster.intersectObject(floor, false)[0];
+      if (hit) pickRef.current.onPick(hit.point.x, -hit.point.z); // Three.js (Y up) -> world (Z up)
+    };
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
 
     // ---- sizing ----
     const resize = () => {
@@ -137,6 +173,7 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
         }
         lastRobot.copy(robotThree);
         haveLast = followRef.current;
+        overlayRef.current?.setProgress(state.navigation.waypoint_index, state.navigation.status);
       } else {
         rig.root.visible = false;
         marker.visible = false;
@@ -151,16 +188,46 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
       controls.dispose();
       disposeObject(scene);
       renderer.dispose();
       renderer.domElement.remove();
       viewApi.current = null;
+      worldRef.current = null;
+      overlayRef.current = null;
     };
   }, [data, snapshotRef]);
 
+  // Route overlay: rebuilt only when the backend reports a new route.
+  useEffect(() => {
+    const world = worldRef.current;
+    if (!world || !route) return;
+    const overlay = buildRouteOverlay(route);
+    world.add(overlay.group);
+    overlayRef.current = overlay;
+    return () => {
+      world.remove(overlay.group);
+      disposeObject(overlay.group);
+      if (overlayRef.current === overlay) overlayRef.current = null;
+    };
+  }, [route, data]);
+
+  // Planner occupancy grid overlay (static map), toggled from the navigation panel.
+  useEffect(() => {
+    const world = worldRef.current;
+    if (!world || !grid || !showGrid) return;
+    const mesh = buildGridOverlay(grid);
+    world.add(mesh);
+    return () => {
+      world.remove(mesh);
+      disposeObject(mesh);
+    };
+  }, [grid, showGrid, data]);
+
   return (
-    <div className="viewport">
+    <div className={`viewport ${pickMode ? 'viewport--pick' : ''}`}>
       <div ref={mountRef} className="viewport-canvas" />
       <div className="viewport-toolbar">
         <button type="button" className="btn btn-ghost" onClick={() => viewApi.current?.overview()} disabled={!data}>
@@ -198,8 +265,17 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry }: Props) {
         <span>
           <i style={{ background: '#3d7bd9' }} /> Container
         </span>
+        {route && (
+          <span>
+            <i style={{ background: '#58a6ff' }} /> A* route
+          </span>
+        )}
       </div>
-      <div className="viewport-hint">Drag: orbit · Right-drag: pan · Wheel: zoom</div>
+      <div className={`viewport-hint ${pickMode ? 'viewport-hint--pick' : ''}`}>
+        {pickMode
+          ? 'Click the floor to set a destination · drag still orbits'
+          : 'Drag: orbit · Right-drag: pan · Wheel: zoom'}
+      </div>
       {!data && <div className="viewport-overlay">Waiting for backend — loading warehouse configuration…</div>}
       {data && !hasTelemetry && (
         <div className="viewport-overlay viewport-overlay--soft">

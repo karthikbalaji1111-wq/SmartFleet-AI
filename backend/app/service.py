@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from simulation.config import AppConfig, get_config
 from simulation.mechanisms import MECHANISMS, MechanismCommand, MechanismName
+from simulation.navigation.models import NavigationTelemetry, RouteModel
 from simulation.world import SimulationWorld, pybullet_available
 
 from .schemas import (
@@ -18,6 +19,7 @@ from .schemas import (
     EventLevel,
     EventModel,
     MechanismCommandResponse,
+    NavigationPlanRequest,
     SimulationSnapshot,
     SimulationStatus,
     WheelTargets,
@@ -167,6 +169,7 @@ class SimulationService:
                 raise InvalidStateError("Cannot pause: the simulation is stopped")
             if self.status == "paused":
                 return "Simulation already paused"
+            self.world.pause_navigation("simulation paused")
             self.world.stop()  # request cancelled; on resume the robot brakes along its profile
             self.world.stop_mechanisms()  # lift/forks hold where they are
             self.status = "paused"
@@ -190,6 +193,10 @@ class SimulationService:
     def command_velocity(self, linear: float, angular: float, duration: float) -> CommandResponse:
         with self._lock:
             self._require_running("Drive commands")
+            # Priority: e-stop > operator > autonomy. A manual drive request takes
+            # over from navigation, which is paused (resume it explicitly).
+            if self.world.pause_navigation("manual drive takeover"):
+                self._drain_navigation_events()
             command = self.world.set_velocity_command(linear, angular, duration)
             targets = self.world.kinematics.wheel_speeds(command.linear, command.angular)
             key = (round(command.linear, 3), round(command.angular, 3))
@@ -216,24 +223,104 @@ class SimulationService:
         are not affected, so releasing a drive key never interrupts them."""
         with self._lock:
             self._require_ready()
+            paused = self.world.pause_navigation("stop requested")
             self.world.stop()
+            self._drain_navigation_events()
             if self._last_logged_command not in (None, (0.0, 0.0)):
                 self.events.add("info", "command", "Stop: drive request cancelled", self.world.sim_time)
             self._last_logged_command = (0.0, 0.0)
-            return "Robot stop requested"
+            return "Robot stop requested" + ("; navigation paused" if paused else "")
 
     def emergency_stop(self) -> str:
         """Stop all robot motion: brake the chassis and hold the lift and forks."""
         with self._lock:
             self._require_ready()
+            cancelled_nav = self.world.navigator.active
+            self.world.cancel_navigation("emergency stop")
             self.world.stop()
             state = self.world.get_robot_state()
             moving = [name for name in MECHANISMS if getattr(state, name).state == "moving"]
             self.world.stop_mechanisms()
             self._last_logged_command = (0.0, 0.0)
             held = f"; {' and '.join(moving)} stopped" if moving else ""
-            self.events.add("warning", "command", f"E-stop: drive cancelled, lift and forks holding{held}", self.world.sim_time)
+            nav = "; navigation cancelled" if cancelled_nav else ""
+            self.events.add(
+                "warning", "command", f"E-stop: drive cancelled, lift and forks holding{held}{nav}", self.world.sim_time
+            )
+            self._drain_navigation_events()
             return "All robot motion stopped (drive cancelled, lift and forks holding)"
+
+    # ------------------------------------------------------------------ #
+    # Autonomous navigation
+    # ------------------------------------------------------------------ #
+    def plan_navigation(self, request: NavigationPlanRequest) -> tuple[str, RouteModel | None]:
+        """Plan a route (allowed while stopped or paused: planning moves nothing)."""
+        with self._lock:
+            self._require_ready()
+            try:
+                destination = self.world.navigator.resolve_destination(
+                    request.destination_id, request.x, request.y, request.yaw, request.snap
+                )
+                plan = self.world.plan_navigation(destination)
+            finally:
+                self._drain_navigation_events()
+            snapped = (
+                f" (snapped {destination.model().snap_distance:.2f} m to navigable floor)" if destination.snapped else ""
+            )
+            message = f"Route to {destination.label}{snapped}: {plan.length:.2f} m, {len(plan.waypoints)} waypoints"
+            return message, self.world.navigator.route_model()
+
+    def start_navigation(self) -> str:
+        with self._lock:
+            self._require_running("Navigation")
+            try:
+                self.world.start_navigation()
+            finally:
+                self._drain_navigation_events()
+            return f"Navigating to {self.world.navigator.destination.label}"
+
+    def pause_navigation(self) -> str:
+        with self._lock:
+            self._require_ready()
+            if not self.world.pause_navigation("paused by operator"):
+                raise InvalidStateError(f"Navigation is not running (status: {self.world.navigator.status})")
+            self._drain_navigation_events()
+            return "Navigation paused"
+
+    def resume_navigation(self) -> str:
+        with self._lock:
+            self._require_running("Navigation")
+            try:
+                self.world.resume_navigation()
+            finally:
+                self._drain_navigation_events()
+            return "Navigation resumed"
+
+    def cancel_navigation(self) -> str:
+        with self._lock:
+            self._require_ready()
+            if not self.world.cancel_navigation("cancelled by operator"):
+                raise InvalidStateError(f"No route or navigation to cancel (status: {self.world.navigator.status})")
+            self._drain_navigation_events()
+            return "Navigation cancelled"
+
+    def navigation_state(self) -> tuple[NavigationTelemetry | None, RouteModel | None]:
+        with self._lock:
+            if not self.ready:
+                return None, None
+            return self.world.navigator.telemetry(self.world.get_robot_state()), self.world.navigator.route_model()
+
+    def route_update(self, known_version: int | None) -> tuple[int, RouteModel | None] | None:
+        """The current route if its version differs from ``known_version``."""
+        with self._lock:
+            version = self.world.navigator.route_version
+            if version == known_version:
+                return None
+            return version, self.world.navigator.route_model()
+
+    def _drain_navigation_events(self) -> None:
+        for level, message in self.world.navigator.drain_events():
+            self.events.add(level, "navigation", message, self.world.sim_time)
 
     # ------------------------------------------------------------------ #
     # Lift and forks
@@ -320,6 +407,7 @@ class SimulationService:
                         self.world.step(steps)
                         for level, message in self.world.drain_events():
                             self.events.add(level, "mechanism", message, self.world.sim_time)
+                        self._drain_navigation_events()
                     except Exception as exc:
                         self.status = "paused"
                         self.events.add("error", "physics", f"Physics step failed, simulation paused: {exc}")

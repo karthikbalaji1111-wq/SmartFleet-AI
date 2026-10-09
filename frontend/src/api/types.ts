@@ -85,7 +85,98 @@ export interface AppConfig {
     limits: MotionLimits;
   };
   simulation: { physics_hz: number; telemetry_hz: number };
+  navigation: {
+    grid: { resolution: number; clearance_margin: number; goal_snap_radius: number };
+    controller: { goal_tolerance: number; heading_tolerance: number; cruise_speed: number };
+    travel: { max_lift: number; max_fork_extension: number };
+    destinations: DestinationConfig[];
+  };
 }
+
+export interface DestinationConfig {
+  id: string;
+  label: string;
+  kind: 'home' | 'aisle' | 'corridor' | 'staging';
+  x: number;
+  y: number;
+  yaw: number | null;
+}
+
+// ------------------------------------------------------------ navigation ---
+export type NavStatus = 'idle' | 'planning' | 'planned' | 'navigating' | 'paused' | 'arrived' | 'cancelled' | 'failed';
+
+export interface PlannerMetrics {
+  status: string;
+  message: string;
+  length: number;
+  raw_length: number;
+  expanded: number;
+  time_ms: number;
+  waypoint_count: number;
+  raw_point_count: number;
+  start_snapped: boolean;
+}
+
+export interface NavDestination {
+  id: string | null;
+  label: string;
+  x: number;
+  y: number;
+  yaw: number | null;
+  requested_x: number;
+  requested_y: number;
+  snapped: boolean;
+  snap_distance: number;
+}
+
+export interface RouteModel {
+  version: number;
+  destination: NavDestination;
+  start: Vec2;
+  waypoints: { x: number; y: number; heading: number }[];
+  path: Vec2[];
+  planner: PlannerMetrics;
+}
+
+export interface NavigationTelemetry {
+  status: NavStatus;
+  destination: NavDestination | null;
+  route_version: number;
+  waypoint_index: number | null;
+  waypoint_count: number;
+  phase: string | null;
+  distance_to_goal: number | null;
+  remaining_distance: number | null;
+  route_length: number | null;
+  progress: number | null;
+  heading_error: number | null;
+  cross_track_error: number | null;
+  command_linear: number;
+  command_angular: number;
+  elapsed: number;
+  planner: PlannerMetrics | null;
+  reason: string | null;
+  interlock: string[];
+}
+
+export interface OccupancyGridData {
+  width: number;
+  height: number;
+  resolution: number;
+  origin: Vec2;
+  inflation_radius: number;
+  robot_radius: number;
+  encoding: 'base64-u8-row-major';
+  cells: string;
+}
+
+export interface NavigationResponse {
+  message: string;
+  navigation: NavigationTelemetry;
+  route: RouteModel | null;
+}
+
+export type PlanRequest = { destination_id: string } | { x: number; y: number; snap?: boolean };
 
 export interface StaticBox {
   id: string;
@@ -212,6 +303,7 @@ export interface WorldState {
   step: number;
   robot: RobotState;
   container: BodyState;
+  navigation: NavigationTelemetry;
 }
 
 export type SimulationStatus = 'stopped' | 'running' | 'paused';
@@ -238,6 +330,7 @@ export interface TelemetryMessage {
   type: 'telemetry';
   snapshot: SimulationSnapshot;
   events: ServerEvent[];
+  route_update: { version: number; route: RouteModel | null } | null;
 }
 
 export interface ControlResponse {

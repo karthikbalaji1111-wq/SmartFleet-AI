@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .navigation.models import NavigationTelemetry
+
 Vec3 = tuple[float, float, float]
 Quat = tuple[float, float, float, float]  # (x, y, z, w), PyBullet order
 
@@ -93,3 +95,4 @@ class WorldState(_Model):
     step: int
     robot: RobotState
     container: BodyState
+    navigation: NavigationTelemetry

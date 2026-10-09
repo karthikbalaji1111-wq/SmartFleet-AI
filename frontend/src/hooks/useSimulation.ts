@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, telemetryUrl } from '../api/client';
 import type {
   MechanismName,
+  OccupancyGridData,
+  PlanRequest,
   ReadyResponse,
+  RouteModel,
   SimulationSnapshot,
   TelemetryMessage,
   WarehouseConfigResponse,
@@ -33,6 +36,10 @@ export function useSimulation() {
   const [connection, setConnection] = useState<ConnectionState>('connecting');
   const [readiness, setReadiness] = useState<ReadyResponse | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  // Planned route: delivered over the WebSocket only when it changes (route_update).
+  const [route, setRoute] = useState<RouteModel | null>(null);
+  const [navError, setNavError] = useState<string | null>(null);
+  const [grid, setGrid] = useState<OccupancyGridData | null>(null);
   const snapshotRef = useRef<SimulationSnapshot | null>(null);
   const seenServerEvents = useRef(new Set<string>());
   const lastClientError = useRef<string | null>(null);
@@ -104,6 +111,7 @@ export function useSimulation() {
         if (msg.type !== 'telemetry') return;
         snapshotRef.current = msg.snapshot;
         setSnapshot(msg.snapshot);
+        if (msg.route_update) setRoute(msg.route_update.route);
         for (const e of msg.events) {
           // id + timestamp: survives reconnects and distinguishes backend restarts.
           const key = `s-${e.id}-${e.timestamp}`;
@@ -218,9 +226,57 @@ export function useSimulation() {
     [mechanismCall],
   );
 
+  // Navigation: planning and control run on the backend; the route and progress
+  // shown in the UI are what it reports back.
+  const navFailure = useCallback(
+    (label: string, err: unknown) => {
+      const message = (err as Error).message;
+      setNavError(message);
+      addLog({ level: 'error', source: 'client', message: `${label} rejected: ${message}` });
+    },
+    [addLog],
+  );
+  const planRoute = useCallback(
+    async (body: PlanRequest) => {
+      try {
+        const res = await api.navigationPlan(body);
+        setRoute(res.route);
+        setNavError(null);
+      } catch (err) {
+        navFailure('Route planning', err);
+      }
+    },
+    [navFailure],
+  );
+  const navAction = useCallback(
+    async (action: 'start' | 'pause' | 'resume' | 'cancel') => {
+      try {
+        await api.navigationAction(action);
+        setNavError(null);
+      } catch (err) {
+        navFailure(`Navigation ${action}`, err);
+      }
+    },
+    [navFailure],
+  );
+  const loadGrid = useCallback(async () => {
+    if (grid) return;
+    try {
+      setGrid(await api.navigationGrid());
+    } catch (err) {
+      addLog({ level: 'error', source: 'client', message: `Occupancy grid unavailable: ${(err as Error).message}` });
+    }
+  }, [grid, addLog]);
+
   return {
     config,
     snapshot,
+    route,
+    navError,
+    grid,
+    planRoute,
+    navAction,
+    loadGrid,
     snapshotRef,
     connection,
     readiness,
