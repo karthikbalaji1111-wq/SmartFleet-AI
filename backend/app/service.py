@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 from simulation.config import AppConfig, get_config
 from simulation.mechanisms import MECHANISMS, MechanismCommand, MechanismName
 from simulation.navigation.models import NavigationTelemetry, RouteModel
-from simulation.world import SimulationWorld, pybullet_available
+from simulation.world import SimulationWorld
+from simulation.world import pybullet_available
+from simulation.tasks import TaskManager, TaskRequest, TaskTelemetry
 
 from .schemas import (
     CommandResponse,
@@ -104,6 +106,7 @@ class SimulationService:
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or get_config()
         self.world = SimulationWorld(self.config)
+        self.task_manager = TaskManager(self.world)
         self.events = EventLog()
         self.status: SimulationStatus = "stopped"
         self.init_error: str | None = None
@@ -363,6 +366,7 @@ class SimulationService:
                 physics_hz=self.config.simulation.physics_hz,
                 timestep=self.config.simulation.timestep,
                 world=world,
+                tasks=self.task_manager.telemetry() if self.ready else None,
                 last_event_id=self.events.last_id,
             )
 
@@ -405,6 +409,7 @@ class SimulationService:
                         accumulator -= steps * dt
                     try:
                         self.world.step(steps)
+                        self.task_manager.tick(elapsed)
                         for level, message in self.world.drain_events():
                             self.events.add(level, "mechanism", message, self.world.sim_time)
                         self._drain_navigation_events()

@@ -12,6 +12,7 @@ from simulation.geometry import StaticBox
 from simulation.mechanisms import LiftPreset, MechanismName
 from simulation.navigation.models import NavigationTelemetry, RouteModel
 from simulation.robot_model import RobotDescription
+from simulation.tasks import TaskRequest, TaskTelemetry, TaskState
 from simulation.state import WorldState
 
 _LIMITS = get_config().robot.limits
@@ -151,6 +152,7 @@ class SimulationSnapshot(BaseModel):
     physics_hz: int
     timestep: float
     world: WorldState | None
+    tasks: TaskTelemetry | None = None
     last_event_id: int
 
 
@@ -235,7 +237,7 @@ class WarehouseConfigResponse(BaseModel):
     config: AppConfig
     static_geometry: list[StaticBox]
     robot_model: RobotDescription
-    container_initial_position: Vec3
+    container_initial_positions: dict[str, Vec3]
     lift_presets: list[LiftPreset]
 
 

@@ -404,9 +404,59 @@ class SimulationWorld:
             ),
         )  # fmt: skip
 
-    def get_container_state(self) -> BodyState:
+
+    def attach_container(self, container_id: str) -> None:
         self._require_initialized()
-        pos, orn = pb.getBasePositionAndOrientation(self.container_id, physicsClientId=self._client)
+        if container_id in self._cargo_constraints:
+            return
+            
+        c_body = self.container_ids[container_id]
+        
+        c_pos, c_orn = pb.getBasePositionAndOrientation(c_body, physicsClientId=self._client)
+        f_state = pb.getLinkState(self.robot_id, self.model.links[FORK_LINK], physicsClientId=self._client)
+        f_pos, f_orn = f_state[0], f_state[1]
+        
+        inv_f_pos, inv_f_orn = pb.invertTransform(f_pos, f_orn)
+        rel_pos, rel_orn = pb.multiplyTransforms(inv_f_pos, inv_f_orn, c_pos, c_orn)
+
+        c_config = next((c for c in self.config.warehouse.containers if c.id == container_id), None)
+        if c_config:
+            ideal_x = self.config.robot.forks.length / 2
+            ideal_z = c_config.size[2] / 2 + self.config.robot.forks.tine_thickness
+            rel_pos = (ideal_x, 0.0, ideal_z)
+            rel_orn = (0.0, 0.0, 0.0, 1.0)
+            
+        constraint_id = pb.createConstraint(
+
+            parentBodyUniqueId=self.robot_id,
+            parentLinkIndex=self.model.links[FORK_LINK],
+            childBodyUniqueId=c_body,
+            childLinkIndex=-1,
+            jointType=pb.JOINT_FIXED,
+            jointAxis=(0, 0, 0),
+            parentFramePosition=rel_pos,
+            childFramePosition=(0, 0, 0),
+            parentFrameOrientation=rel_orn,
+            childFrameOrientation=(0, 0, 0, 1),
+            physicsClientId=self._client,
+        )
+        pb.changeConstraint(constraint_id, maxForce=10000, physicsClientId=self._client)
+        self._cargo_constraints[container_id] = constraint_id
+
+    def detach_container(self, container_id: str) -> None:
+        self._require_initialized()
+        if container_id in self._cargo_constraints:
+            constraint_id = self._cargo_constraints.pop(container_id)
+            pb.removeConstraint(constraint_id, physicsClientId=self._client)
+
+    def get_container_states(self) -> list[BodyState]:
+        self._require_initialized()
+        states = []
+        for c in self.config.warehouse.containers:
+            cid = self.container_ids[c.id]
+            pos, orn = pb.getBasePositionAndOrientation(cid, physicsClientId=self._client)
+            states.append(BodyState(id=c.id, position=tuple(pos), orientation=tuple(orn)))
+        return states
         return BodyState(id=self.config.warehouse.container.id, position=tuple(pos), orientation=tuple(orn))
 
     def get_state(self) -> WorldState:
@@ -415,7 +465,7 @@ class SimulationWorld:
             sim_time=self.sim_time,
             step=self._step_count,
             robot=robot,
-            container=self.get_container_state(),
+            containers=self.get_container_states(),
             navigation=self.navigator.telemetry(robot),
         )
 
@@ -435,7 +485,9 @@ class SimulationWorld:
     def _clear_runtime_state(self) -> None:
         self.robot_id = -1
         self.floor_id = -1
-        self.container_id = -1
+        self.container_ids: dict[str, int] = {}
+        self.container_locations: dict[str, str] = {}
+        self._cargo_constraints: dict[str, int] = {}
         self.static_body_ids: dict[str, int] = {}
         self.model: RobotModelIndex | None = None
         self._step_count = 0
@@ -493,20 +545,31 @@ class SimulationWorld:
         self.model = index_robot_model(c, self.robot_id, self.description)
         self._configure_robot()
 
-        cont = self.config.warehouse.container
-        cx, cy, cz = container_initial_position(self.config.warehouse)
-        cshape = pb.createCollisionShape(
-            pb.GEOM_BOX, halfExtents=[s / 2 for s in cont.size], physicsClientId=c
-        )
-        self.container_id = pb.createMultiBody(
-            baseMass=cont.mass,
-            baseCollisionShapeIndex=cshape,
-            basePosition=(cx, cy, cz + SPAWN_CLEARANCE),
-            physicsClientId=c,
-        )
-        pb.changeDynamics(self.container_id, -1, lateralFriction=0.8, physicsClientId=c)
+
+        self.container_ids = {}
+        self.container_locations = {}
+        for cont in self.config.warehouse.containers:
+            self.container_locations[cont.id] = cont.location
+            cx, cy, cz = container_initial_position(self.config.warehouse, cont)
+            cshape = pb.createCollisionShape(
+                pb.GEOM_BOX, halfExtents=[s / 2 for s in cont.size], physicsClientId=c
+            )
+            cid = pb.createMultiBody(
+                baseMass=cont.mass,
+                baseCollisionShapeIndex=cshape,
+                basePosition=(cx, cy, cz + SPAWN_CLEARANCE),
+                physicsClientId=c,
+            )
+            pb.changeDynamics(cid, -1, lateralFriction=0.8, physicsClientId=c)
+            self.container_ids[cont.id] = cid
 
         # Let contacts settle with all motors holding; the clock starts afterwards.
+
+        # Disable collisions between the forks and containers so the forks can slide under/through them
+        for cid in self.container_ids.values():
+            pb.setCollisionFilterPair(self.robot_id, cid, self.model.links[FORK_LINK], -1, 0, physicsClientId=c)
+            pb.setCollisionFilterPair(self.robot_id, cid, self.model.links[LIFT_CARRIAGE_LINK], -1, 0, physicsClientId=c)
+
         for _ in range(sim.settle_steps):
             self._apply_drive()
             pb.stepSimulation(physicsClientId=c)
@@ -531,6 +594,7 @@ class SimulationWorld:
                 body, links[name], lateralFriction=0.0, spinningFriction=0.0, rollingFriction=0.0,
                 physicsClientId=c,
             )  # fmt: skip
+
         # Lift and forks start at their default positions (placed once while the
         # world is built); from then on only their position motors move them.
         for name in MECHANISMS:
@@ -619,7 +683,8 @@ class SimulationWorld:
         """Name what a blocked mechanism is touching, from PyBullet contact points."""
         moving_links = [FORK_LINK] if name == "forks" else [LIFT_CARRIAGE_LINK, FORK_LINK]
         names = {body: box_id for box_id, body in self.static_body_ids.items()}
-        names[self.container_id] = self.config.warehouse.container.id
+        for cid, id_str in self.container_ids.items():
+            names[cid] = id_str
         found: list[str] = []
         for link in moving_links:
             for contact in pb.getContactPoints(

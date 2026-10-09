@@ -79,6 +79,10 @@ export const api = {
     request<NavigationResponse>('/api/navigation/plan', { method: 'POST', body: JSON.stringify(body) }),
   navigationAction: (action: 'start' | 'pause' | 'resume' | 'cancel') =>
     request<NavigationResponse>(`/api/navigation/${action}`, { method: 'POST' }),
+  taskSubmit: (body: { container_id: string; destination: string }) =>
+    request<{ message: string }>('/api/tasks/submit', { method: 'POST', body: JSON.stringify(body) }),
+  taskCancel: () =>
+    request<{ message: string }>('/api/tasks/cancel', { method: 'POST' }),
 };
 
 export function telemetryUrl(): string {

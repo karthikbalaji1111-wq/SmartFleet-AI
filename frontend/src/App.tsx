@@ -8,6 +8,7 @@ import { StatusBar } from './components/StatusBar';
 import { TelemetryPanel } from './components/TelemetryPanel';
 import { useSimulation } from './hooks/useSimulation';
 import { WarehouseViewport } from './scene/WarehouseViewport';
+import { WarehouseOperationsPanel } from './components/WarehouseOperationsPanel';
 
 export default function App() {
   const sim = useSimulation();
@@ -73,6 +74,7 @@ export default function App() {
             onPlan={sim.planRoute}
             onAction={sim.navAction}
           />
+          <WarehouseOperationsPanel config={sim.config} />
           <ManualDrive
             enabled={driveEnabled}
             canEstop={physicsOnline}

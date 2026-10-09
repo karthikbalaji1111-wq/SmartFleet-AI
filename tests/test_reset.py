@@ -27,8 +27,8 @@ def test_reset_restores_initial_state(world, config):
     assert not s.command.active and s.command.linear == 0.0 and s.command.angular == 0.0
     assert s.lift.position == pytest.approx(config.robot.lift.lower, abs=1e-3)
     assert s.forks.position == pytest.approx(config.robot.forks.lower, abs=1e-3)
-    assert world.get_container_state().position == pytest.approx(
-        container_initial_position(config.warehouse), abs=0.01
+    assert world.get_container_states()[0].position == pytest.approx(
+        container_initial_position(config.warehouse, config.warehouse.containers[0]), abs=0.01
     )
 
 

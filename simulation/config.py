@@ -14,7 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, computed_field
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "warehouse.json"
@@ -83,11 +83,19 @@ class StationConfig(_Model):
     size: Vec3
 
 
+
+class StorageSlot(_Model):
+    id: str
+    rack_id: str
+    bay: int
+    level: int
+    center: Vec3
+
 class ContainerConfig(_Model):
     id: str = Field(min_length=1)
     size: Vec3
     mass: float = Field(gt=0)
-    station: str
+    location: str
 
 
 class WarehouseConfig(_Model):
@@ -98,7 +106,7 @@ class WarehouseConfig(_Model):
     racks: tuple[RackConfig, ...]
     zones: tuple[ZoneConfig, ...]
     stations: tuple[StationConfig, ...]
-    container: ContainerConfig
+    containers: tuple[ContainerConfig, ...]
 
     @model_validator(mode="after")
     def _check_references(self) -> WarehouseConfig:
@@ -113,8 +121,59 @@ class WarehouseConfig(_Model):
         for station in self.stations:
             if station.zone not in zone_ids:
                 raise ValueError(f"station {station.id!r} references unknown zone {station.zone!r}")
-        if self.container.station not in {s.id for s in self.stations}:
-            raise ValueError(f"container references unknown station {self.container.station!r}")
+        return self
+
+    @computed_field
+    @property
+    def slots(self) -> list[StorageSlot]:
+        slots = []
+        for rack in self.racks:
+            rt = self.rack_types[rack.type]
+            # Bay width
+            bay_width = (rt.length - rt.post_size) / rt.bays
+            start_offset = -rt.length / 2 + rt.post_size / 2 + bay_width / 2
+            
+            # Get max container width
+            max_cont_width = max([c.size[0] for c in self.containers]) if self.containers else 0.4
+            clearance = 0.05
+            slot_needed = max_cont_width + clearance
+            for bay in range(rt.bays):
+                slots_per_bay = max(1, int(bay_width / slot_needed))
+                sub_slot_width = bay_width / slots_per_bay
+                sub_start_offset = -bay_width / 2 + sub_slot_width / 2
+                
+                for lvl_idx, z in enumerate(rt.levels):
+                    for s_idx in range(slots_per_bay):
+                        slot_id = f"{rack.id}-B{bay+1}-L{lvl_idx+1}-S{s_idx+1}"
+                        
+                        # Local x offset for the bay
+                        bay_center_x = start_offset + bay * bay_width
+                        local_x = bay_center_x + sub_start_offset + s_idx * sub_slot_width
+                        
+                        if rack.axis == "x":
+                            cx = rack.center[0] + local_x
+                            cy = rack.center[1]
+                        else:
+                            cx = rack.center[0]
+                            cy = rack.center[1] + local_x
+                            
+                        slots.append(StorageSlot(
+                            id=slot_id,
+                            rack_id=rack.id,
+                            bay=bay+1,
+                            level=lvl_idx+1,
+                            center=(cx, cy, z)
+                        ))
+        return slots
+
+    @model_validator(mode="after")
+    def _validate_locations(self) -> WarehouseConfig:
+        valid_locs = {s.id for s in self.stations} | {s.id for s in self.slots}
+        for c in self.containers:
+            if c.location not in valid_locs:
+                raise ValueError(f"container {c.id!r} references unknown location {c.location!r}")
+        return self
+
         return self
 
     def rack_type(self, rack: RackConfig) -> RackType:

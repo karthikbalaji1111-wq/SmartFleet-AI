@@ -70,8 +70,8 @@ def test_telemetry_is_finite_and_json_serializable(world):
 
 
 def test_container_rests_on_station(world, config):
-    c = world.get_container_state()
-    expected = container_initial_position(config.warehouse)
+    c = world.get_container_states()[0]
+    expected = container_initial_position(config.warehouse, config.warehouse.containers[0])
     assert c.position == pytest.approx(expected, abs=0.01)
 
 

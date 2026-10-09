@@ -110,13 +110,15 @@ def test_robot_start_pose_is_clear_and_inside_home_zone(config):
     assert abs(x - home.center[0]) <= home.size[0] / 2 and abs(y - home.center[1]) <= home.size[1] / 2
 
 
+
 def test_container_rests_on_its_station(config):
     wh = config.warehouse
-    station = wh.station(wh.container.station)
-    x, y, z = container_initial_position(wh)
+    container = wh.containers[0]
+    station = wh.station(container.location)
+    x, y, z = container_initial_position(wh, container)
     assert (x, y) == pytest.approx(station.center)
-    assert z - wh.container.size[2] / 2 == pytest.approx(station.size[2])
-    assert wh.container.size[0] <= station.size[0] and wh.container.size[1] <= station.size[1]
+    assert z - container.size[2] / 2 == pytest.approx(station.size[2])
+    assert container.size[0] <= station.size[0] and container.size[1] <= station.size[1]
 
 
 def test_every_shelf_level_is_within_fork_reach(config):

@@ -17,8 +17,8 @@ def test_initializes_in_direct_mode_with_fixed_timestep(world, pb, config):
 
 def test_world_contains_floor_static_geometry_robot_and_container(world, pb):
     n_bodies = pb.getNumBodies(physicsClientId=world.client_id)
-    assert n_bodies == 1 + len(world.static_geometry) + 1 + 1
-    assert world.floor_id >= 0 and world.robot_id >= 0 and world.container_id >= 0
+    assert n_bodies == 1 + len(world.static_geometry) + 1 + len(world.config.warehouse.containers)
+    assert world.floor_id >= 0 and world.robot_id >= 0 and world.container_ids['TOTE-0001'] >= 0
     assert set(world.static_body_ids) == {b.id for b in world.static_geometry}
 
 

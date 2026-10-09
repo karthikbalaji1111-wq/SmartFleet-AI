@@ -29,48 +29,197 @@
         "bays": 2,
         "post_size": 0.08,
         "shelf_thickness": 0.04,
-        "levels": [0.40, 0.85, 1.30, 1.75]
+        "levels": [
+          0.4,
+          0.85,
+          1.3,
+          1.75
+        ]
       }
     },
     "racks": [
-      { "id": "A1", "type": "tote-shelving-4L", "center": [-7.0, 5.5], "axis": "x" },
-      { "id": "A2", "type": "tote-shelving-4L", "center": [0.0, 5.5], "axis": "x" },
-      { "id": "B1", "type": "tote-shelving-4L", "center": [-7.0, 2.0], "axis": "x" },
-      { "id": "B2", "type": "tote-shelving-4L", "center": [0.0, 2.0], "axis": "x" },
-      { "id": "C1", "type": "tote-shelving-4L", "center": [-7.0, -1.5], "axis": "x" },
-      { "id": "C2", "type": "tote-shelving-4L", "center": [0.0, -1.5], "axis": "x" },
-      { "id": "D1", "type": "tote-shelving-4L", "center": [-7.0, -5.0], "axis": "x" },
-      { "id": "D2", "type": "tote-shelving-4L", "center": [0.0, -5.0], "axis": "x" }
+      {
+        "id": "A1",
+        "type": "tote-shelving-4L",
+        "center": [
+          -7.0,
+          5.5
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "A2",
+        "type": "tote-shelving-4L",
+        "center": [
+          0.0,
+          5.5
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "B1",
+        "type": "tote-shelving-4L",
+        "center": [
+          -7.0,
+          2.0
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "B2",
+        "type": "tote-shelving-4L",
+        "center": [
+          0.0,
+          2.0
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "C1",
+        "type": "tote-shelving-4L",
+        "center": [
+          -7.0,
+          -1.5
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "C2",
+        "type": "tote-shelving-4L",
+        "center": [
+          0.0,
+          -1.5
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "D1",
+        "type": "tote-shelving-4L",
+        "center": [
+          -7.0,
+          -5.0
+        ],
+        "axis": "x"
+      },
+      {
+        "id": "D2",
+        "type": "tote-shelving-4L",
+        "center": [
+          0.0,
+          -5.0
+        ],
+        "axis": "x"
+      }
     ],
     "zones": [
-      { "id": "loading", "kind": "loading", "label": "LOADING / INBOUND", "center": [9.0, 4.0], "size": [4.0, 5.0] },
-      { "id": "delivery", "kind": "delivery", "label": "DELIVERY / OUTBOUND", "center": [9.0, -4.0], "size": [4.0, 5.0] },
-      { "id": "home", "kind": "home", "label": "ROBOT HOME", "center": [5.0, 0.0], "size": [1.6, 1.4] }
+      {
+        "id": "loading",
+        "kind": "loading",
+        "label": "LOADING / INBOUND",
+        "center": [
+          9.0,
+          4.0
+        ],
+        "size": [
+          4.0,
+          5.0
+        ]
+      },
+      {
+        "id": "delivery",
+        "kind": "delivery",
+        "label": "DELIVERY / OUTBOUND",
+        "center": [
+          9.0,
+          -4.0
+        ],
+        "size": [
+          4.0,
+          5.0
+        ]
+      },
+      {
+        "id": "home",
+        "kind": "home",
+        "label": "ROBOT HOME",
+        "center": [
+          5.0,
+          0.0
+        ],
+        "size": [
+          1.6,
+          1.4
+        ]
+      }
     ],
     "stations": [
-      { "id": "inbound-stand", "zone": "loading", "center": [10.4, 4.0], "size": [0.8, 0.6, 0.7] },
-      { "id": "outbound-stand", "zone": "delivery", "center": [10.4, -4.0], "size": [0.8, 0.6, 0.7] }
+      {
+        "id": "inbound-stand",
+        "zone": "loading",
+        "center": [
+          10.4,
+          4.0
+        ],
+        "size": [
+          0.8,
+          0.6,
+          0.7
+        ]
+      },
+      {
+        "id": "outbound-stand",
+        "zone": "delivery",
+        "center": [
+          10.4,
+          -4.0
+        ],
+        "size": [
+          0.8,
+          0.6,
+          0.7
+        ]
+      }
     ],
-    "container": {
-      "id": "TOTE-0001",
-      "size": [0.40, 0.30, 0.22],
-      "mass": 2.0,
-      "station": "inbound-stand"
-    }
+    "containers": [
+      {
+        "id": "TOTE-0001",
+        "size": [
+          0.4,
+          0.3,
+          0.22
+        ],
+        "mass": 2.0,
+        "location": "inbound-stand"
+      },
+      {
+        "id": "TOTE-0002",
+        "size": [
+          0.4,
+          0.3,
+          0.22
+        ],
+        "mass": 2.0,
+        "location": "A1-B1-L1-S1"
+      }
+    ]
   },
   "robot": {
     "id": "amr-01",
     "name": "SF-1 Autonomous Storage Robot",
-    "start_pose": { "x": 5.0, "y": 0.0, "yaw": 3.141592653589793 },
+    "start_pose": {
+      "x": 5.0,
+      "y": 0.0,
+      "yaw": 3.141592653589793
+    },
     "chassis": {
-      "length": 0.90,
+      "length": 0.9,
       "width": 0.56,
       "height": 0.24,
       "ground_clearance": 0.04,
       "mass": 60.0
     },
     "wheels": {
-      "radius": 0.10,
+      "radius": 0.1,
       "width": 0.05,
       "track_width": 0.62,
       "mass": 2.0,
@@ -92,24 +241,24 @@
     },
     "lift": {
       "lower": 0.0,
-      "upper": 1.60,
+      "upper": 1.6,
       "default_position": 0.0,
       "position_tolerance": 0.005,
       "max_jog_step": 0.25,
-      "max_velocity": 0.30,
+      "max_velocity": 0.3,
       "max_force": 450.0,
       "carriage_mass": 6.0
     },
     "forks": {
-      "length": 0.70,
+      "length": 0.7,
       "tine_width": 0.06,
       "tine_thickness": 0.03,
       "tine_spacing": 0.24,
       "lower": 0.0,
-      "upper": 0.60,
+      "upper": 0.6,
       "default_position": 0.0,
       "position_tolerance": 0.005,
-      "max_jog_step": 0.20,
+      "max_jog_step": 0.2,
       "max_velocity": 0.25,
       "max_force": 300.0,
       "mass": 4.0
@@ -139,9 +288,9 @@
   },
   "navigation": {
     "grid": {
-      "resolution": 0.10,
-      "clearance_margin": 0.10,
-      "preferred_clearance": 0.60,
+      "resolution": 0.1,
+      "clearance_margin": 0.1,
+      "preferred_clearance": 0.6,
       "proximity_weight": 3.0,
       "allow_diagonal": true,
       "start_snap_radius": 0.35,
@@ -153,7 +302,7 @@
       "max_turn_rate": 1.0,
       "heading_gain": 2.5,
       "rotate_in_place_threshold": 0.5,
-      "waypoint_tolerance": 0.20,
+      "waypoint_tolerance": 0.2,
       "goal_tolerance": 0.08,
       "heading_tolerance": 0.06,
       "braking_fraction": 0.6,
@@ -163,20 +312,83 @@
       "command_duration": 0.3
     },
     "travel": {
-      "max_lift": 0.10,
+      "max_lift": 0.1,
       "max_fork_extension": 0.01
     },
     "destinations": [
-      { "id": "home", "label": "Robot home", "kind": "home", "x": 5.0, "y": 0.0, "yaw": 3.141592653589793 },
-      { "id": "aisle-ab", "label": "Aisle A/B", "kind": "aisle", "x": 0.0, "y": 3.75 },
-      { "id": "aisle-bc", "label": "Aisle B/C", "kind": "aisle", "x": -7.0, "y": 0.25 },
-      { "id": "aisle-cd", "label": "Aisle C/D", "kind": "aisle", "x": 0.0, "y": -3.25 },
-      { "id": "cross-aisle", "label": "Cross aisle", "kind": "aisle", "x": -3.5, "y": 0.25 },
-      { "id": "west-corridor", "label": "West corridor", "kind": "corridor", "x": -10.7, "y": 0.0 },
-      { "id": "north-corridor", "label": "North corridor", "kind": "corridor", "x": -3.5, "y": 6.9 },
-      { "id": "south-corridor", "label": "South corridor", "kind": "corridor", "x": -3.5, "y": -6.65 },
-      { "id": "loading-staging", "label": "Loading staging", "kind": "staging", "x": 8.9, "y": 4.0, "yaw": 0.0 },
-      { "id": "delivery-staging", "label": "Delivery staging", "kind": "staging", "x": 8.9, "y": -4.0, "yaw": 0.0 }
+      {
+        "id": "home",
+        "label": "Robot home",
+        "kind": "home",
+        "x": 5.0,
+        "y": 0.0,
+        "yaw": 3.141592653589793
+      },
+      {
+        "id": "aisle-ab",
+        "label": "Aisle A/B",
+        "kind": "aisle",
+        "x": 0.0,
+        "y": 3.75
+      },
+      {
+        "id": "aisle-bc",
+        "label": "Aisle B/C",
+        "kind": "aisle",
+        "x": -7.0,
+        "y": 0.25
+      },
+      {
+        "id": "aisle-cd",
+        "label": "Aisle C/D",
+        "kind": "aisle",
+        "x": 0.0,
+        "y": -3.25
+      },
+      {
+        "id": "cross-aisle",
+        "label": "Cross aisle",
+        "kind": "aisle",
+        "x": -3.5,
+        "y": 0.25
+      },
+      {
+        "id": "west-corridor",
+        "label": "West corridor",
+        "kind": "corridor",
+        "x": -10.7,
+        "y": 0.0
+      },
+      {
+        "id": "north-corridor",
+        "label": "North corridor",
+        "kind": "corridor",
+        "x": -3.5,
+        "y": 6.9
+      },
+      {
+        "id": "south-corridor",
+        "label": "South corridor",
+        "kind": "corridor",
+        "x": -3.5,
+        "y": -6.65
+      },
+      {
+        "id": "loading-staging",
+        "label": "Loading staging",
+        "kind": "staging",
+        "x": 8.9,
+        "y": 4.0,
+        "yaw": 0.0
+      },
+      {
+        "id": "delivery-staging",
+        "label": "Delivery staging",
+        "kind": "staging",
+        "x": 8.9,
+        "y": -4.0,
+        "yaw": 0.0
+      }
     ]
   }
 }

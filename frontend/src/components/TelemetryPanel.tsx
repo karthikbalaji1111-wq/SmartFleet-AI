@@ -3,7 +3,7 @@ import { num } from './format';
 
 export function TelemetryPanel({ world, robotId }: { world: WorldState | null | undefined; robotId?: string }) {
   const r = world?.robot;
-  const c = world?.container;
+  const containers = world?.containers ?? [];
   return (
     <section className="panel">
       <h2 className="panel-title">
@@ -56,12 +56,16 @@ export function TelemetryPanel({ world, robotId }: { world: WorldState | null | 
             {num(r?.pose.roll, 3, true)} / {num(r?.pose.pitch, 3, true)} rad
           </dd>
         </div>
-        <div>
-          <dt>Container {c?.id ?? ''}</dt>
-          <dd className="mono">
-            {c ? `${num(c.position[0], 2)}, ${num(c.position[1], 2)}, ${num(c.position[2], 2)} m` : '—'}
-          </dd>
-        </div>
+
+        {containers.slice(0, 2).map(c => (
+          <div key={c.id}>
+            <dt>Container {c.id}</dt>
+            <dd className="mono">
+              {`${num(c.position[0], 2)}, ${num(c.position[1], 2)}, ${num(c.position[2], 2)} m`}
+            </dd>
+          </div>
+        ))}
+
       </dl>
     </section>
   );

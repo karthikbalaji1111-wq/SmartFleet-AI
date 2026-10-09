@@ -94,5 +94,5 @@ class WorldState(_Model):
     sim_time: float
     step: int
     robot: RobotState
-    container: BodyState
+    containers: list[BodyState]
     navigation: NavigationTelemetry

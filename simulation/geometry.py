@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from .config import RackConfig, RackType, Vec3, WarehouseConfig
+from .config import ContainerConfig, RackConfig, RackType, Vec3, WarehouseConfig
 
 BoxKind = Literal["wall", "rack_post", "rack_shelf", "station"]
 
@@ -110,7 +110,13 @@ def build_static_geometry(warehouse: WarehouseConfig) -> list[StaticBox]:
     return boxes
 
 
-def container_initial_position(warehouse: WarehouseConfig) -> Vec3:
-    """Centre of the sample container resting on top of its configured station."""
-    station = warehouse.station(warehouse.container.station)
-    return (station.center[0], station.center[1], station.size[2] + warehouse.container.size[2] / 2)
+
+def container_initial_position(warehouse: WarehouseConfig, container: ContainerConfig) -> Vec3:
+    """Centre of the container resting on its configured location (station or slot)."""
+    try:
+        station = warehouse.station(container.location)
+        return (station.center[0], station.center[1], station.size[2] + container.size[2] / 2)
+    except StopIteration:
+        # Not a station, must be a slot
+        slot = next(s for s in warehouse.slots if s.id == container.location)
+        return (slot.center[0], slot.center[1], slot.center[2] + container.size[2] / 2)

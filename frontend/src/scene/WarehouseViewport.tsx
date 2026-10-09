@@ -75,7 +75,7 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid
     const top = () => {
       // Slightly tilted: a camera exactly above its target is degenerate for OrbitControls.
       controls.target.copy(toThree(0, 0, 0));
-      camera.position.copy(toThree(0, -1.5, Math.max(sx, sy) * 1.25));
+      camera.position.copy(toThree(0, -0.1, Math.max(sx, sy) * 1.25));
       controls.update();
     };
     viewApi.current = { overview, top };
@@ -98,11 +98,17 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid
     world.rotation.x = -Math.PI / 2;
     scene.add(world);
     world.add(buildWarehouse(data));
+
     const rig = buildRobot(data.robot_model);
     world.add(rig.root);
-    const container = buildContainer(data.config.warehouse.container.size);
-    world.add(container);
+    const containerGroups: Record<string, THREE.Group> = {};
+    for (const c of data.config.warehouse.containers) {
+      const g = buildContainer(c.size);
+      world.add(g);
+      containerGroups[c.id] = g;
+    }
     const marker = buildRobotMarker(0.62);
+
     world.add(marker);
     worldRef.current = world;
 
@@ -131,16 +137,19 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid
     renderer.domElement.addEventListener('pointerup', onPointerUp);
 
     // ---- sizing ----
-    const resize = () => {
-      const { clientWidth: w, clientHeight: h } = mount;
+    const resize = (w: number, h: number) => {
       if (!w || !h) return;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
-    const observer = new ResizeObserver(resize);
+    const observer = new ResizeObserver((entries) => {
+      if (!entries.length) return;
+      const { width, height } = entries[0].contentRect;
+      resize(width, height);
+    });
     observer.observe(mount);
-    resize();
+    resize(mount.clientWidth, mount.clientHeight);
 
     // ---- render loop: copy the latest physics state, never invent motion ----
     let frame = 0;
@@ -154,11 +163,16 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid
         const [rx, ry] = state.robot.pose.position;
         marker.position.set(rx, ry, 0.009);
         marker.visible = true;
-        const [cx, cy, cz] = state.container.position;
-        const [qx, qy, qz, qw] = state.container.orientation;
-        container.position.set(cx, cy, cz);
-        container.quaternion.set(qx, qy, qz, qw);
-        container.visible = true;
+        for (const cState of state.containers) {
+          const g = containerGroups[cState.id];
+          if (g) {
+            const [cx, cy, cz] = cState.position;
+            const [qx, qy, qz, qw] = cState.orientation;
+            g.position.set(cx, cy, cz);
+            g.quaternion.set(qx, qy, qz, qw);
+            g.visible = true;
+          }
+        }
 
         const robotThree = toThree(rx, ry, 0.4);
         if (followRef.current && haveLast) {
@@ -173,12 +187,17 @@ export function WarehouseViewport({ data, snapshotRef, hasTelemetry, route, grid
         }
         lastRobot.copy(robotThree);
         haveLast = followRef.current;
-        overlayRef.current?.setProgress(state.navigation.waypoint_index, state.navigation.status);
+        if (overlayRef.current) {
+          overlayRef.current.group.visible = true;
+          overlayRef.current.setProgress(state.navigation.waypoint_index, state.navigation.status);
+        }
       } else {
         rig.root.visible = false;
         marker.visible = false;
-        container.visible = false;
+        Object.values(containerGroups).forEach((g) => (g.visible = false));
+
         haveLast = false;
+        if (overlayRef.current) overlayRef.current.group.visible = false;
       }
       controls.update();
       renderer.render(scene, camera);

@@ -73,7 +73,8 @@ export interface AppConfig {
     racks: RackConfig[];
     zones: ZoneConfig[];
     stations: { id: string; zone: string; center: Vec2; size: Vec3 }[];
-    container: { id: string; size: Vec3; mass: number; station: string };
+    containers: { id: string; size: Vec3; mass: number; location: string }[];
+    slots: { id: string; rack_id: string; bay: number; level: number; center: Vec3 }[];
   };
   robot: {
     id: string;
@@ -228,7 +229,7 @@ export interface WarehouseConfigResponse {
   config: AppConfig;
   static_geometry: StaticBox[];
   robot_model: RobotModel;
-  container_initial_position: Vec3;
+  container_initial_positions: Record<string, Vec3>;
   lift_presets: LiftPreset[];
 }
 
@@ -302,7 +303,7 @@ export interface WorldState {
   sim_time: number;
   step: number;
   robot: RobotState;
-  container: BodyState;
+  containers: BodyState[];
   navigation: NavigationTelemetry;
 }
 

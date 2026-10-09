@@ -11,6 +11,7 @@ import contextlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from simulation.tasks import TaskRequest
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -139,7 +140,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             config=cfg,
             static_geometry=service.world.static_geometry,
             robot_model=service.world.description,
-            container_initial_position=container_initial_position(cfg.warehouse),
+            container_initial_positions={c.id: container_initial_position(cfg.warehouse, c) for c in cfg.warehouse.containers},
             lift_presets=lift_presets(cfg),
         )
 
@@ -320,7 +321,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
 
+
+    # ------------------------------------------------------------------ #
+    # Tasks
+    # ------------------------------------------------------------------ #
+    @app.post("/api/tasks/submit")
+    async def submit_task(request: TaskRequest):
+        service.task_manager.submit(request)
+        return {"message": f"Task submitted for {request.container_id} to {request.destination}"}
+
+    @app.post("/api/tasks/cancel")
+    async def cancel_task():
+        service.task_manager.cancel()
+        return {"message": "Task cancelled"}
+
     return app
+
 
 
 app = create_app()
