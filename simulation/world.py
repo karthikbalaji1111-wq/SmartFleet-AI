@@ -1,8 +1,9 @@
 """PyBullet physics world for SmartFleet AI (DIRECT mode, fixed timestep).
 
-The world owns one PyBullet client. Robot pose and velocities are always read
-back from PyBullet; nothing here integrates a competing pose. Motion is
-produced only by wheel velocity motors acting through contact friction.
+The world owns one PyBullet client. Robot pose, velocities and joint positions
+are always read back from PyBullet; nothing here integrates a competing state.
+Chassis motion is produced only by wheel velocity motors acting through contact
+friction; the lift and forks move only through their joint position motors.
 """
 
 from __future__ import annotations
@@ -16,11 +17,27 @@ from pathlib import Path
 from .config import AppConfig, get_config
 from .diff_drive import DiffDriveKinematics, VelocityCommand, WheelSpeeds, ramp, validate_command
 from .geometry import StaticBox, build_static_geometry, container_initial_position
+from .mechanisms import (
+    MECHANISM_JOINTS,
+    MECHANISMS,
+    OVERLOAD_RATIO,
+    OVERLOAD_TIME,
+    STALL_SPEED,
+    STALL_TIME,
+    MechanismCommand,
+    MechanismFault,
+    MechanismName,
+    actuator_config,
+    validate_jog,
+    validate_target,
+)
 from .robot_model import (
     EXPECTED_JOINTS,
     FORK_JOINT,
+    FORK_LINK,
     FRONT_CASTER_LINK,
     LEFT_WHEEL_JOINT,
+    LIFT_CARRIAGE_LINK,
     LIFT_JOINT,
     REAR_CASTER_LINK,
     RIGHT_WHEEL_JOINT,
@@ -29,10 +46,10 @@ from .robot_model import (
     write_urdf,
 )
 from .state import (
-    ActuatorTelemetry,
     BodyState,
     CommandTelemetry,
     JointTelemetry,
+    MechanismTelemetry,
     PoseTelemetry,
     RobotState,
     VelocityTelemetry,
@@ -222,6 +239,13 @@ class SimulationWorld:
             self._apply_drive()
             pb.stepSimulation(physicsClientId=self._client)
             self._step_count += 1
+            self._monitor_mechanisms()
+
+    def drain_events(self) -> list[tuple[str, str]]:
+        """Return and clear (level, message) events raised during stepping,
+        e.g. a mechanism that was blocked and stopped."""
+        events, self._events = self._events, []
+        return events
 
     def set_velocity_command(self, linear: float, angular: float, duration: float | None = None) -> VelocityCommand:
         """Request a body twist for ``duration`` s of sim time (dead-man timeout).
@@ -248,6 +272,42 @@ class SimulationWorld:
             self._angular_cmd = 0.0
 
     # ------------------------------------------------------------------ #
+    # Lift and fork mechanisms (PyBullet position motors on prismatic joints)
+    # ------------------------------------------------------------------ #
+    def mechanism_position(self, name: MechanismName) -> float:
+        """Measured joint position of a mechanism, m."""
+        self._require_initialized()
+        joint = self.model.joints[MECHANISM_JOINTS[name]]
+        return pb.getJointState(self.robot_id, joint, physicsClientId=self._client)[0]
+
+    def set_mechanism_target(self, name: MechanismName, position: float) -> MechanismCommand:
+        """Drive a mechanism to an absolute joint position. Targets outside the
+        configured limits raise :class:`CommandError` (never clamped)."""
+        self._require_initialized()
+        target = validate_target(name, position, actuator_config(self.config.robot, name))
+        return self._command_mechanism(name, target)
+
+    def jog_mechanism(self, name: MechanismName, delta: float) -> MechanismCommand:
+        """Move a mechanism's target by ``delta``; the result saturates at the
+        travel limit (``clamped`` in the result)."""
+        self._require_initialized()
+        cfg = actuator_config(self.config.robot, name)
+        step = validate_jog(name, delta, cfg)
+        wanted = self._mech_targets[name] + step
+        target = min(cfg.upper, max(cfg.lower, wanted))
+        return self._command_mechanism(name, target, clamped=not math.isclose(target, wanted, abs_tol=1e-9))
+
+    def stop_mechanism(self, name: MechanismName) -> MechanismCommand:
+        """Hold a mechanism where it is now (its target becomes the measured position)."""
+        self._require_initialized()
+        cfg = actuator_config(self.config.robot, name)
+        here = min(cfg.upper, max(cfg.lower, self.mechanism_position(name)))
+        return self._command_mechanism(name, here)
+
+    def stop_mechanisms(self) -> list[MechanismCommand]:
+        return [self.stop_mechanism(name) for name in MECHANISMS]
+
+    # ------------------------------------------------------------------ #
     # State (always read from PyBullet)
     # ------------------------------------------------------------------ #
     def get_robot_state(self) -> RobotState:
@@ -262,7 +322,9 @@ class SimulationWorld:
             [joints[LEFT_WHEEL_JOINT], joints[RIGHT_WHEEL_JOINT], joints[LIFT_JOINT], joints[FORK_JOINT]],
             physicsClientId=c,
         )
-        lift_cfg, fork_cfg = self.config.robot.lift, self.config.robot.forks
+        fork_link = pb.getLinkState(
+            body, self.model.links[FORK_LINK], computeForwardKinematics=True, physicsClientId=c
+        )
         active = self._command_expires_at > self.sim_time
         return RobotState(
             id=self.config.robot.id,
@@ -288,14 +350,10 @@ class SimulationWorld:
                 target_right=self._wheel_targets.right,
                 brake_engaged=self._brake_engaged,
             ),
-            lift=ActuatorTelemetry(
-                position=lift[0], velocity=lift[1], lower=lift_cfg.lower, upper=lift_cfg.upper,
-                target=self._lift_target, mode="hold",
-            ),
-            forks=ActuatorTelemetry(
-                position=fork[0], velocity=fork[1], lower=fork_cfg.lower, upper=fork_cfg.upper,
-                target=self._fork_target, mode="hold",
-            ),
+            lift=self._mechanism_telemetry("lift", lift),
+            forks=self._mechanism_telemetry("forks", fork),
+            # Fork link frame sits at the tines' underside; add the tine thickness.
+            fork_surface_height=fork_link[4][2] + self.config.robot.forks.tine_thickness,
             command=CommandTelemetry(
                 active=active,
                 target_linear=self._target.linear if active else 0.0,
@@ -345,8 +403,13 @@ class SimulationWorld:
         self._angular_cmd = 0.0
         self._wheel_targets = WheelSpeeds(0.0, 0.0)
         self._brake_engaged = False
-        self._lift_target = self.config.robot.lift.lower
-        self._fork_target = self.config.robot.forks.lower
+        self._mech_targets: dict[MechanismName, float] = {
+            name: actuator_config(self.config.robot, name).default_position for name in MECHANISMS
+        }
+        self._mech_stall_time: dict[MechanismName, float] = {name: 0.0 for name in MECHANISMS}
+        self._mech_overload_time: dict[MechanismName, float] = {name: 0.0 for name in MECHANISMS}
+        self._mech_fault: dict[MechanismName, MechanismFault | None] = {name: None for name in MECHANISMS}
+        self._events: list[tuple[str, str]] = []
 
     def _build_world(self) -> None:
         c, sim, robot = self._client, self.config.simulation, self.config.robot
@@ -425,17 +488,102 @@ class SimulationWorld:
                 body, links[name], lateralFriction=0.0, spinningFriction=0.0, rollingFriction=0.0,
                 physicsClientId=c,
             )  # fmt: skip
-        # Lift and forks are physically actuated position joints, held at their
-        # targets. Commanded motion for them is deferred to a later milestone.
-        for name, target, cfg in (
-            (LIFT_JOINT, self._lift_target, robot.lift),
-            (FORK_JOINT, self._fork_target, robot.forks),
-        ):
-            pb.resetJointState(body, joints[name], target, physicsClientId=c)
-            pb.setJointMotorControl2(
-                body, joints[name], pb.POSITION_CONTROL, targetPosition=target,
-                force=cfg.max_force, maxVelocity=cfg.max_velocity, physicsClientId=c,
-            )  # fmt: skip
+        # Lift and forks start at their default positions (placed once while the
+        # world is built); from then on only their position motors move them.
+        for name in MECHANISMS:
+            pb.resetJointState(body, joints[MECHANISM_JOINTS[name]], self._mech_targets[name], physicsClientId=c)
+            self._apply_mechanism_motor(name)
+
+    def _apply_mechanism_motor(self, name: MechanismName) -> None:
+        """Force- and velocity-limited PyBullet position motor towards the target."""
+        cfg = actuator_config(self.config.robot, name)
+        pb.setJointMotorControl2(
+            self.robot_id, self.model.joints[MECHANISM_JOINTS[name]], pb.POSITION_CONTROL,
+            targetPosition=self._mech_targets[name], targetVelocity=0.0,
+            force=cfg.max_force, maxVelocity=cfg.max_velocity, physicsClientId=self._client,
+        )  # fmt: skip
+
+    def _command_mechanism(self, name: MechanismName, target: float, clamped: bool = False) -> MechanismCommand:
+        previous = self._mech_targets[name]
+        self._mech_targets[name] = target
+        self._mech_stall_time[name] = 0.0
+        self._mech_overload_time[name] = 0.0
+        self._mech_fault[name] = None
+        self._apply_mechanism_motor(name)
+        return MechanismCommand(name, target, previous, self.mechanism_position(name), clamped)
+
+    def _monitor_mechanisms(self) -> None:
+        """Protection for the lift and forks. A mechanism short of its target
+        is stopped where it is and flagged as blocked (until its next command)
+        when it stalls, saturates its motor force, or tilts the chassis."""
+        joints = [self.model.joints[MECHANISM_JOINTS[name]] for name in MECHANISMS]
+        states = pb.getJointStates(self.robot_id, joints, physicsClientId=self._client)
+        _, orientation = pb.getBasePositionAndOrientation(self.robot_id, physicsClientId=self._client)
+        roll, pitch, _ = pb.getEulerFromQuaternion(orientation)
+        tilted = max(abs(roll), abs(pitch)) > self.config.robot.limits.max_handling_tilt
+        for name, (position, velocity, _, force) in zip(MECHANISMS, states):
+            cfg = actuator_config(self.config.robot, name)
+            if self._mech_fault[name] or abs(self._mech_targets[name] - position) <= cfg.position_tolerance:
+                self._mech_stall_time[name] = self._mech_overload_time[name] = 0.0
+                continue
+            stalled = abs(velocity) < STALL_SPEED
+            self._mech_stall_time[name] = self._mech_stall_time[name] + self.timestep if stalled else 0.0
+            saturated = abs(force) >= OVERLOAD_RATIO * cfg.max_force
+            self._mech_overload_time[name] = self._mech_overload_time[name] + self.timestep if saturated else 0.0
+            if tilted:
+                self._trip_mechanism(name, position, "tilt", f"chassis tilted {math.degrees(max(abs(roll), abs(pitch))):.1f}°")
+            elif self._mech_overload_time[name] >= OVERLOAD_TIME:
+                self._trip_mechanism(name, position, "overload", f"motor at its {cfg.max_force:.0f} N limit")
+            elif self._mech_stall_time[name] >= STALL_TIME:
+                self._trip_mechanism(name, position, "stalled", "no motion")
+
+    def _trip_mechanism(self, name: MechanismName, position: float, fault: MechanismFault, detail: str) -> None:
+        """Hold a mechanism where it is and report why (and what it is touching)."""
+        cfg = actuator_config(self.config.robot, name)
+        wanted = self._mech_targets[name]
+        self._mech_targets[name] = min(cfg.upper, max(cfg.lower, position))
+        self._apply_mechanism_motor(name)
+        self._mech_fault[name] = fault
+        obstacle = self._mechanism_obstacle(name)
+        by = f" by {obstacle}" if obstacle else ""
+        self._events.append(
+            (
+                "warning",
+                f"{name} blocked{by} ({fault}: {detail}) at {position:.3f} m before reaching {wanted:.3f} m; "
+                "holding position",
+            )
+        )
+
+    def _mechanism_obstacle(self, name: MechanismName) -> str | None:
+        """Name what a blocked mechanism is touching, from PyBullet contact points."""
+        moving_links = [FORK_LINK] if name == "forks" else [LIFT_CARRIAGE_LINK, FORK_LINK]
+        names = {body: box_id for box_id, body in self.static_body_ids.items()}
+        names[self.container_id] = self.config.warehouse.container.id
+        found: list[str] = []
+        for link in moving_links:
+            for contact in pb.getContactPoints(
+                bodyA=self.robot_id, linkIndexA=self.model.links[link], physicsClientId=self._client
+            ):
+                body = contact[2]
+                if body == self.robot_id:
+                    continue
+                label = names.get(body, f"body {body}")
+                if label not in found:
+                    found.append(label)
+        return ", ".join(found) or None
+
+    def _mechanism_telemetry(self, name: MechanismName, joint_state: tuple) -> MechanismTelemetry:
+        cfg = actuator_config(self.config.robot, name)
+        position, velocity, _, applied = joint_state
+        target = self._mech_targets[name]
+        at_target = abs(target - position) <= cfg.position_tolerance
+        fault = self._mech_fault[name]
+        state = "blocked" if fault else "holding" if at_target else "moving"
+        return MechanismTelemetry(
+            position=position, velocity=velocity, target=target, error=target - position,
+            at_target=at_target, state=state, fault=fault, applied_force=applied,
+            lower=cfg.lower, upper=cfg.upper, default=cfg.default_position, max_velocity=cfg.max_velocity,
+        )  # fmt: skip
 
     def _apply_drive(self) -> None:
         """Dead-man timeout + acceleration limiting, then wheel motor targets

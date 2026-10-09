@@ -168,36 +168,38 @@ class MastConfig(_Model):
     mass: float = Field(gt=0)
 
 
-class LiftConfig(_Model):
-    lower: float
+class ActuatorConfig(_Model):
+    """Operating parameters shared by the prismatic lift and fork mechanisms."""
+
+    lower: float  # joint travel limits, m (also written into the URDF)
     upper: float
-    max_velocity: float = Field(gt=0)
-    max_force: float = Field(gt=0)
-    carriage_mass: float = Field(gt=0)
+    default_position: float  # home position after start-up / reset
+    position_tolerance: float = Field(gt=0)  # |target - position| that counts as "at target"
+    max_jog_step: float = Field(gt=0)  # largest accepted incremental move
+    max_velocity: float = Field(gt=0)  # m/s, enforced by the PyBullet motor
+    max_force: float = Field(gt=0)  # N, motor force limit
 
     @model_validator(mode="after")
-    def _check_range(self) -> LiftConfig:
+    def _check_range(self) -> ActuatorConfig:
         if self.upper <= self.lower:
-            raise ValueError("lift upper limit must exceed lower limit")
+            raise ValueError("actuator upper limit must exceed lower limit")
+        if not self.lower <= self.default_position <= self.upper:
+            raise ValueError("actuator default_position must lie within [lower, upper]")
+        if self.max_jog_step > self.upper - self.lower:
+            raise ValueError("actuator max_jog_step must not exceed the travel range")
         return self
 
 
-class ForkConfig(_Model):
+class LiftConfig(ActuatorConfig):
+    carriage_mass: float = Field(gt=0)
+
+
+class ForkConfig(ActuatorConfig):
     length: float = Field(gt=0)
     tine_width: float = Field(gt=0)
     tine_thickness: float = Field(gt=0)
     tine_spacing: float = Field(gt=0)
-    lower: float
-    upper: float
-    max_velocity: float = Field(gt=0)
-    max_force: float = Field(gt=0)
     mass: float = Field(gt=0)
-
-    @model_validator(mode="after")
-    def _check_range(self) -> ForkConfig:
-        if self.upper <= self.lower:
-            raise ValueError("fork upper limit must exceed lower limit")
-        return self
 
 
 class MotionLimits(_Model):
@@ -207,6 +209,7 @@ class MotionLimits(_Model):
     max_angular_acceleration: float = Field(gt=0)
     max_linear_deceleration: float = Field(gt=0)  # braking (incl. Stop), m/s^2
     max_angular_deceleration: float = Field(gt=0)
+    max_handling_tilt: float = Field(gt=0, lt=0.5)  # rad; lift/forks stop if the chassis tilts more while moving
     min_command_duration: float = Field(gt=0)
     max_command_duration: float = Field(gt=0)
     default_command_duration: float = Field(gt=0)

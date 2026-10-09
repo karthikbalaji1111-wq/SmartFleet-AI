@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, telemetryUrl } from '../api/client';
-import type { ReadyResponse, SimulationSnapshot, TelemetryMessage, WarehouseConfigResponse } from '../api/types';
+import type {
+  MechanismName,
+  ReadyResponse,
+  SimulationSnapshot,
+  TelemetryMessage,
+  WarehouseConfigResponse,
+} from '../api/types';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline';
 
@@ -167,6 +173,7 @@ export function useSimulation() {
     [addLog],
   );
 
+  // Drive release: cancels the drive request only (lift/forks keep moving).
   const stop = useCallback(async () => {
     try {
       await api.stop();
@@ -175,5 +182,57 @@ export function useSimulation() {
     }
   }, [addLog]);
 
-  return { config, snapshot, snapshotRef, connection, readiness, log, start, pause, reset, drive, stop };
+  // E-stop: all robot motion (drive, lift and forks).
+  const estop = useCallback(async () => {
+    try {
+      await api.estop();
+    } catch (err) {
+      addLog({ level: 'error', source: 'client', message: `E-stop failed: ${(err as Error).message}` });
+    }
+  }, [addLog]);
+
+  // Lift / forks: every action goes to the backend; the UI only shows what
+  // PyBullet then reports. Server events describe accepted commands, so only
+  // failures are logged here.
+  const mechanismCall = useCallback(
+    async (label: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (err) {
+        addLog({ level: 'error', source: 'client', message: `${label} rejected: ${(err as Error).message}` });
+      }
+    },
+    [addLog],
+  );
+  const setMechanismTarget = useCallback(
+    (name: MechanismName, position: number) =>
+      mechanismCall(`${name} target`, () => api.mechanismTarget(name, Number(position.toFixed(4)))),
+    [mechanismCall],
+  );
+  const jogMechanism = useCallback(
+    (name: MechanismName, delta: number) => mechanismCall(`${name} jog`, () => api.mechanismJog(name, delta)),
+    [mechanismCall],
+  );
+  const stopMechanism = useCallback(
+    (name?: MechanismName) => mechanismCall(`${name ?? 'mechanism'} stop`, () => api.mechanismStop(name)),
+    [mechanismCall],
+  );
+
+  return {
+    config,
+    snapshot,
+    snapshotRef,
+    connection,
+    readiness,
+    log,
+    start,
+    pause,
+    reset,
+    drive,
+    stop,
+    estop,
+    setMechanismTarget,
+    jogMechanism,
+    stopMechanism,
+  };
 }

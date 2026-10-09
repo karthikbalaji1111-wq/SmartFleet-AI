@@ -139,7 +139,9 @@ def test_retracted_forks_stay_within_chassis(config):
     [
         (lambda raw: raw["warehouse"]["racks"].append(dict(raw["warehouse"]["racks"][0])), "duplicate"),
         (lambda raw: raw["warehouse"]["racks"][0].update(type="missing-type"), "unknown rack type"),
-        (lambda raw: raw["robot"]["lift"].update(upper=-1.0), "lift upper limit"),
+        (lambda raw: raw["robot"]["lift"].update(upper=-1.0), "actuator upper limit must exceed"),
+        (lambda raw: raw["robot"]["forks"].update(default_position=0.9), "default_position must lie"),
+        (lambda raw: raw["robot"]["lift"].update(max_jog_step=5.0), "max_jog_step"),
         (lambda raw: raw["robot"]["limits"].update(max_linear_velocity=5.0), "wheel speed"),
         (lambda raw: raw["warehouse"]["rack_types"]["tote-shelving-4L"].update(levels=[0.8, 0.4]), "increasing"),
         (lambda raw: raw.update(unexpected_key=1), "Extra inputs"),

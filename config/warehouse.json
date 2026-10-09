@@ -93,8 +93,11 @@
     "lift": {
       "lower": 0.0,
       "upper": 1.60,
+      "default_position": 0.0,
+      "position_tolerance": 0.005,
+      "max_jog_step": 0.25,
       "max_velocity": 0.30,
-      "max_force": 2000.0,
+      "max_force": 450.0,
       "carriage_mass": 6.0
     },
     "forks": {
@@ -104,8 +107,11 @@
       "tine_spacing": 0.24,
       "lower": 0.0,
       "upper": 0.60,
+      "default_position": 0.0,
+      "position_tolerance": 0.005,
+      "max_jog_step": 0.20,
       "max_velocity": 0.25,
-      "max_force": 800.0,
+      "max_force": 300.0,
       "mass": 4.0
     },
     "limits": {
@@ -115,6 +121,7 @@
       "max_angular_acceleration": 3.0,
       "max_linear_deceleration": 2.0,
       "max_angular_deceleration": 5.0,
+      "max_handling_tilt": 0.05,
       "min_command_duration": 0.05,
       "max_command_duration": 2.0,
       "default_command_duration": 0.5

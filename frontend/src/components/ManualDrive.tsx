@@ -20,10 +20,12 @@ const COMMAND_DURATION_S = 0.4;
 
 interface Props {
   enabled: boolean;
+  canEstop: boolean; // physics ready (allowed in any simulation state)
   limits: MotionLimits | undefined;
   robot: RobotState | undefined;
   onDrive: (linear: number, angular: number, duration: number) => void;
-  onStop: () => void;
+  onStop: () => void; // drive release (drive request only)
+  onEstop: () => void; // STOP button / Space: all robot motion
 }
 
 /**
@@ -31,7 +33,7 @@ interface Props {
  * drive; requests are re-sent while held and carry a short dead-man timeout,
  * so releasing — or losing the connection — stops the robot.
  */
-export function ManualDrive({ enabled, limits, robot, onDrive, onStop }: Props) {
+export function ManualDrive({ enabled, canEstop, limits, robot, onDrive, onStop, onEstop }: Props) {
   const maxV = limits?.max_linear_velocity ?? 1;
   const maxW = limits?.max_angular_velocity ?? 1.5;
   const [speed, setSpeed] = useState(0.5);
@@ -41,8 +43,8 @@ export function ManualDrive({ enabled, limits, robot, onDrive, onStop }: Props) 
   const keysRef = useRef(new Set<Dir>());
   const pointerRef = useRef<Dir | null>(null);
   const movingRef = useRef(false);
-  const params = useRef({ speed, turn, enabled, onDrive, onStop });
-  params.current = { speed, turn, enabled, onDrive, onStop };
+  const params = useRef({ speed, turn, enabled, onDrive, onStop, onEstop });
+  params.current = { speed, turn, enabled, onDrive, onStop, onEstop };
 
   const pump = useCallback(() => {
     const { speed: v, turn: w, enabled: on, onDrive: drive, onStop: stop } = params.current;
@@ -94,7 +96,7 @@ export function ManualDrive({ enabled, limits, robot, onDrive, onStop }: Props) 
         pointerRef.current = null;
         movingRef.current = false;
         refreshHeld();
-        params.current.onStop();
+        params.current.onEstop();
         return;
       }
       const dir = KEY_DIRS[e.code];
@@ -164,15 +166,16 @@ export function ManualDrive({ enabled, limits, robot, onDrive, onStop }: Props) 
           <button
             type="button"
             className="pad-btn pad-stop"
-            disabled={!enabled}
+            disabled={!canEstop}
             onClick={() => {
               keysRef.current.clear();
               pointerRef.current = null;
               movingRef.current = false;
               refreshHeld();
-              onStop();
+              onEstop();
             }}
-            title="Stop (Space)"
+            aria-label="Stop all robot motion (Space)"
+            title="Stop all robot motion: drive, lift and forks (Space)"
           >
             STOP
           </button>
@@ -214,7 +217,7 @@ export function ManualDrive({ enabled, limits, robot, onDrive, onStop }: Props) 
       </div>
       <p className="hint">
         {enabled
-          ? 'Hold a button or W/A/S/D (arrows). Release to stop; Space = stop. Limits: ' +
+          ? 'Hold a button or W/A/S/D (arrows); release to stop driving. STOP / Space halts all motion incl. lift and forks. Limits: ' +
             `±${maxV} m/s, ±${maxW} rad/s.`
           : 'Start the simulation to enable manual drive.'}
       </p>

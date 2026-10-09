@@ -8,6 +8,7 @@ import math
 import pytest
 
 from simulation.geometry import container_initial_position
+from simulation.robot_model import fork_surface_height
 
 from .conftest import wrap_angle
 
@@ -45,7 +46,12 @@ def test_initial_state_is_safe_and_at_rest(world, config):
     assert s.forks.position == pytest.approx(config.robot.forks.lower, abs=1e-3)
     assert (s.lift.lower, s.lift.upper) == (config.robot.lift.lower, config.robot.lift.upper)
     assert (s.forks.lower, s.forks.upper) == (config.robot.forks.lower, config.robot.forks.upper)
-    assert s.lift.mode == "hold" and s.forks.mode == "hold"
+    for mech, cfg in ((s.lift, config.robot.lift), (s.forks, config.robot.forks)):
+        assert mech.state == "holding" and mech.at_target
+        assert mech.target == cfg.default_position
+        assert abs(mech.velocity) < 1e-3
+    # Fork surface height comes from the fork link pose in PyBullet.
+    assert s.fork_surface_height == pytest.approx(fork_surface_height(config.robot, s.lift.position), abs=5e-3)
 
 
 def test_lift_and_forks_hold_position_over_time(world, config):
