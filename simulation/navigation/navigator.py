@@ -146,7 +146,7 @@ class Navigator:
         sx, sy = self.grid.cell_to_world(*free)
         return Destination(sx, sy, yaw, label, None, (x, y), snapped=True)
 
-    def plan_route(self, start: tuple[float, float], destination: Destination) -> PlanResult:
+    def plan_route(self, start: tuple[float, float], destination: Destination, dynamic_blocked_cells: set[int] = frozenset()) -> PlanResult:
         """Plan from the measured robot position. Replaces any previous route."""
         if self.status == "navigating":
             raise NavigationError("state", "navigation is active; pause or cancel it before planning a new route")
@@ -154,6 +154,7 @@ class Navigator:
         plan = plan_path(
             self.grid, start, (destination.x, destination.y), final_yaw=destination.yaw,
             start_snap_radius=self.config.navigation.grid.start_snap_radius,
+            dynamic_blocked_cells=dynamic_blocked_cells,
         )  # fmt: skip
         self.last_metrics = _metrics(plan)
         self.follower = None
@@ -230,7 +231,7 @@ class Navigator:
         self._events.append(("info", f"Navigation paused: {reason}"))
         return True
 
-    def resume(self, robot: RobotState) -> None:
+    def resume(self, robot: RobotState, dynamic_blocked_cells: set[int] = frozenset()) -> None:
         if self.status != "paused" or self.follower is None:
             raise NavigationError("state", "navigation is not paused")
         self._check_interlock(robot)
@@ -243,7 +244,7 @@ class Navigator:
         if off > self.cfg.max_cross_track_error:
             raise NavigationError("route_invalid", f"the robot is {off:.2f} m off the route; plan again")
         cell = self.grid.world_to_cell(x, y)
-        if cell is None or (self.grid.is_free(*cell) and not self.grid.line_of_sight((x, y), pts[i])):
+        if cell is None or (self.grid.is_free(*cell) and not self.grid.line_of_sight((x, y), pts[i])) or any((cx + cy * self.grid.width) in dynamic_blocked_cells for cx, cy in self.grid.traverse((x, y), pts[i])):
             raise NavigationError("route_invalid", "no clear path back to the route; plan again")
         self.status, self.reason = "navigating", None
         self.follower._since_progress = 0.0  # pause time is not lack of progress

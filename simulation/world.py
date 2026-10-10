@@ -607,12 +607,112 @@ class SimulationWorld:
                 f"{name} commands are blocked while the robot is navigating; pause or cancel navigation first"
             )
 
+    def _detect_dynamic_obstacles(self) -> set[int]:
+        obstacles = set()
+        state = self.get_robot_state()
+        x, y, _ = state.pose.position
+        yaw = state.pose.heading
+        
+        num_rays = 5
+        spread_angle = 1.047 # 60 degrees
+        reach = 2.5
+        
+        ray_from = []
+        ray_to = []
+        
+        start_z = 0.2
+        for i in range(num_rays):
+            angle = yaw + (i - (num_rays - 1) / 2.0) * (spread_angle / max(1, num_rays - 1))
+            offset = 0.45
+            ray_from.append([x + offset * __import__('math').cos(yaw), y + offset * __import__('math').sin(yaw), start_z])
+            ray_to.append([x + reach * 3.14159/3.14159 * __import__('math').cos(angle), y + reach * __import__('math').sin(angle), start_z])
+            
+        results = pb.rayTestBatch(ray_from, ray_to, physicsClientId=self._client)
+        
+        detected_ids = set()
+        static_ids = set(self.static_body_ids.values())
+        cargo_ids = {self.container_ids[c] for c in self._cargo_constraints}
+        
+        for res in results:
+            hit_object_id = res[0]
+            if hit_object_id >= 0:
+                if hit_object_id in static_ids or hit_object_id == self.robot_id or hit_object_id in cargo_ids:
+                    continue
+                detected_ids.add(hit_object_id)
+                
+        if not detected_ids:
+            return obstacles
+        
+        print("Detected dynamic object IDs:", detected_ids)
+            
+        grid = self.navigator.grid
+        inflation = grid.inflation_radius + grid.preferred_clearance
+        r_cells = __import__('math').ceil(inflation / grid.resolution)
+        
+        for obj_id in detected_ids:
+            aabb = pb.getAABB(obj_id, physicsClientId=self._client)
+            min_pos, max_pos = aabb[0], aabb[1]
+            
+            # Convert to grid coordinates manually to avoid out-of-bounds returning None
+            min_cx = int((min_pos[0] - grid.origin[0]) / grid.resolution)
+            min_cy = int((min_pos[1] - grid.origin[1]) / grid.resolution)
+            max_cx = int((max_pos[0] - grid.origin[0]) / grid.resolution)
+            max_cy = int((max_pos[1] - grid.origin[1]) / grid.resolution)
+            
+            min_cx, max_cx = min(min_cx, max_cx), max(min_cx, max_cx)
+            min_cy, max_cy = min(min_cy, max_cy), max(min_cy, max_cy)
+            
+            for iy in range(min_cy - r_cells, max_cy + r_cells + 1):
+                for ix in range(min_cx - r_cells, max_cx + r_cells + 1):
+                    if grid.in_bounds(ix, iy):
+                            # Distance from cell center to AABB
+                            wx, wy = grid.cell_to_world(ix, iy)
+                            dx = max(min_pos[0] - wx, 0.0, wx - max_pos[0])
+                            dy = max(min_pos[1] - wy, 0.0, wy - max_pos[1])
+                            if __import__('math').hypot(dx, dy) <= inflation:
+                                obstacles.add(iy * grid.width + ix)
+                                
+        return obstacles
+
     def _navigation_tick(self) -> None:
-        """Measured pose -> follower -> the robot's normal drive interface."""
         nav = self.navigator
+        if nav.status == "navigating":
+            obstacles = self._detect_dynamic_obstacles()
+            if obstacles:
+                state = self.get_robot_state()
+                route_blocked = True
+                if nav.plan and nav.plan.waypoints:
+                    idx = nav.follower.index if nav.follower else 0
+                    pts = [(state.pose.position[0], state.pose.position[1])] + [(w.x, w.y) for w in nav.plan.waypoints[idx:]]
+                    from .navigation.planner import validate_path
+                    if validate_path(nav.grid, pts, dynamic_blocked_cells=obstacles):
+                        route_blocked = False
+                    else:
+                        print("Route blocked! Pts:", pts)
+                        for cx, cy in nav.grid.traverse(pts[0], pts[1]):
+                            if (cx + cy * nav.grid.width) in obstacles:
+                                print(f"Segment blocked at {cx}, {cy}!")
+                                break
+                
+                if route_blocked:
+                    nav.pause("dynamic obstacle detected")
+                    self._events.append(("warning", "Dynamic obstacle detected. Replanning..."))
+                    if nav.destination:
+                        try:
+                            nav.plan_route(
+                                (state.pose.position[0], state.pose.position[1]), 
+                                nav.destination, 
+                                dynamic_blocked_cells=obstacles
+                            )
+                            nav.start(state)
+                            self._events.append(("info", "Successfully replanned around dynamic obstacle."))
+                        except Exception as e:
+                            nav.fail(f"Replan failed: {str(e)}")
+                            self._events.append(("warning", f"Failed to replan: {str(e)}"))
+
         cmd = nav.tick(self.get_robot_state(), self._nav_steps * self.timestep)
         if cmd is None or cmd.phase == "arrived":
-            self.stop()  # arrived (settling), finished or failed: brake along the profile
+            self.stop()
             return
         lim = self.config.robot.limits
         v = max(-lim.max_linear_velocity, min(lim.max_linear_velocity, cmd.linear))

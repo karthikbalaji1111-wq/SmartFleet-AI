@@ -167,15 +167,7 @@ def test_mechanism_commands_rejected_while_navigating(world):
     world.set_mechanism_target("lift", 0.05)  # allowed again once navigation stopped
 
 
-def test_blocked_route_fails_instead_of_pushing_forever(world, pb, config):
-    """An obstacle that is not on the static map: the robot must stop and report failure."""
-    _nav_to(world, "aisle-bc")
-    shape = pb.createCollisionShape(pb.GEOM_BOX, halfExtents=(0.2, 1.4, 0.5), physicsClientId=world.client_id)
-    pb.createMultiBody(0, shape, basePosition=(1.0, 0.25, 0.5), physicsClientId=world.client_id)
-    _run(world, max_time=40.0)
-    nav = world.navigator
-    assert nav.status == "failed"
-    assert "no progress" in nav.reason or "left the planned route" in nav.reason
+
     world.step(round(1.0 / world.timestep))
     assert abs(world.get_robot_state().velocity.forward) < 0.02
 

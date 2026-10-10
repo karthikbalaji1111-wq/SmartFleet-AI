@@ -60,7 +60,7 @@ def octile(a: Cell, b: Cell, resolution: float) -> float:
     return resolution * (max(dx, dy) + (SQRT2 - 1.0) * min(dx, dy))
 
 
-def astar(grid: OccupancyGrid, start: Cell, goal: Cell) -> tuple[list[Cell] | None, int]:
+def astar(grid: OccupancyGrid, start: Cell, goal: Cell, dynamic_blocked_cells: set[int] = frozenset()) -> tuple[list[Cell] | None, int]:
     """A* over free cells. Returns (cells from start to goal or None, expanded)."""
     if start == goal:
         return [start], 0
@@ -90,6 +90,8 @@ def astar(grid: OccupancyGrid, start: Cell, goal: Cell) -> tuple[list[Cell] | No
             return route, expanded
         for nx, ny, cost in grid.neighbors(*cell):
             j = ny * width + nx
+            if j in dynamic_blocked_cells:
+                continue
             if closed[j]:
                 continue
             nxt = (nx, ny)
@@ -109,7 +111,7 @@ def path_length(points: list[Point] | tuple[Point, ...]) -> float:
     return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
 
 
-def simplify(grid: OccupancyGrid, points: list[Point], first_free_index: int = 0) -> list[Point]:
+def simplify(grid: OccupancyGrid, points: list[Point], first_free_index: int = 0, dynamic_blocked_cells: set[int] = frozenset()) -> list[Point]:
     """Greedy line-of-sight simplification that never reduces clearance.
 
     Points ``i+1..j-1`` are replaced by the straight segment ``i -> j`` only if
@@ -135,7 +137,7 @@ def simplify(grid: OccupancyGrid, points: list[Point], first_free_index: int = 0
         floor = min(clear[i], clear[j])
         while j + 1 <= last:
             needed = min(floor, clear[j + 1])
-            if not grid.line_of_sight(points[i], points[j + 1], min_clearance=needed - 1e-9):
+            if not grid.line_of_sight(points[i], points[j + 1], min_clearance=needed - 1e-9) or any((cx + cy * grid.width) in dynamic_blocked_cells for cx, cy in grid.traverse(points[i], points[j + 1])):
                 break
             j += 1
             floor = needed
@@ -144,12 +146,12 @@ def simplify(grid: OccupancyGrid, points: list[Point], first_free_index: int = 0
     return out
 
 
-def validate_path(grid: OccupancyGrid, points: list[Point] | tuple[Point, ...], skip_first_segment: bool = False) -> bool:
+def validate_path(grid: OccupancyGrid, points: list[Point] | tuple[Point, ...], skip_first_segment: bool = False, dynamic_blocked_cells: set[int] = frozenset()) -> bool:
     """Every segment must stay on free cells (the planner's own contract)."""
     segments = list(zip(points, points[1:]))
     if skip_first_segment:
         segments = segments[1:]
-    return all(grid.line_of_sight(a, b) for a, b in segments)
+    return all(grid.line_of_sight(a, b) and not any((cx + cy * grid.width) in dynamic_blocked_cells for cx, cy in grid.traverse(a, b)) for a, b in segments)
 
 
 def _headings(points: list[Point], final_yaw: float | None) -> tuple[Waypoint, ...]:
@@ -177,6 +179,7 @@ def plan_path(
     final_yaw: float | None = None,
     start_snap_radius: float = 0.0,
     simplify_path: bool = True,
+    dynamic_blocked_cells: set[int] = frozenset(),
 ) -> PlanResult:
     """Plan from a world start point to a world goal point.
 
@@ -234,14 +237,14 @@ def plan_path(
             start_cell=start_cell, goal_cell=goal_cell, start_snapped=snapped,
         )  # fmt: skip
 
-    cells, expanded = astar(grid, route_start, goal_cell)
+    cells, expanded = astar(grid, route_start, goal_cell, dynamic_blocked_cells)
     if cells is None:  # pragma: no cover - components make this a safety net
         return result("unreachable", "no route found", start_cell=start_cell, goal_cell=goal_cell, expanded=expanded)
 
     centres = [grid.cell_to_world(*c) for c in cells]
     raw = [(sx, sy), *centres, (gx, gy)]
     escape = 1 if snapped else 0
-    points = simplify(grid, raw, escape) if simplify_path else raw
+    points = simplify(grid, raw, escape, dynamic_blocked_cells) if simplify_path else raw
     # Drop zero-length duplicates (e.g. start exactly at a cell centre).
     dedup = [points[0]] + [p for prev, p in zip(points, points[1:]) if math.dist(prev, p) > 1e-9]
     if len(dedup) == 1:
