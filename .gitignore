@@ -51,3 +51,4 @@ Thumbs.db
 
 # Local Claude Code config (machine-specific paths)
 .claude/
+tasks.db
