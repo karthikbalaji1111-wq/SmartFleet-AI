@@ -74,7 +74,7 @@ export default function App() {
             onPlan={sim.planRoute}
             onAction={sim.navAction}
           />
-          <WarehouseOperationsPanel config={sim.config} />
+          <WarehouseOperationsPanel config={sim.config} snapshot={sim.snapshot} />
           <ManualDrive
             enabled={driveEnabled}
             canEstop={physicsOnline}

@@ -79,10 +79,15 @@ export const api = {
     request<NavigationResponse>('/api/navigation/plan', { method: 'POST', body: JSON.stringify(body) }),
   navigationAction: (action: 'start' | 'pause' | 'resume' | 'cancel') =>
     request<NavigationResponse>(`/api/navigation/${action}`, { method: 'POST' }),
-  taskSubmit: (body: { container_id: string; destination: string }) =>
-    request<{ message: string }>('/api/tasks/submit', { method: 'POST', body: JSON.stringify(body) }),
+  taskSubmit: (body: { container_id: string; destination: string; type?: 'storage' | 'retrieval'; priority?: number }) =>
+    request<{ message: string; task_id: string }>('/api/tasks/submit', { method: 'POST', body: JSON.stringify(body) }),
   taskCancel: () =>
     request<{ message: string }>('/api/tasks/cancel', { method: 'POST' }),
+  taskCancelSpecific: (taskId: string) =>
+    request<{ message: string }>(`/api/tasks/${taskId}/cancel`, { method: 'POST' }),
+  taskSetPriority: (taskId: string, priority: number) =>
+    request<{ message: string }>(`/api/tasks/${taskId}/priority`, { method: 'POST', body: JSON.stringify({ priority }) }),
+
 };
 
 export function telemetryUrl(): string {

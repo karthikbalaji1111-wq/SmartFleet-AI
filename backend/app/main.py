@@ -325,15 +325,31 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # ------------------------------------------------------------------ #
     # Tasks
     # ------------------------------------------------------------------ #
-    @app.post("/api/tasks/submit")
-    async def submit_task(request: TaskRequest):
-        service.task_manager.submit(request)
-        return {"message": f"Task submitted for {request.container_id} to {request.destination}"}
+    from fastapi import Body
+    
+    @app.get("/api/tasks", tags=["tasks"])
+    async def get_tasks():
+        return service.task_manager.telemetry()
 
-    @app.post("/api/tasks/cancel")
+    @app.post("/api/tasks/submit", tags=["tasks"])
+    async def submit_task(request: TaskRequest):
+        task_id = service.task_manager.submit(request, task_type=request.type, priority=request.priority)
+        return {"message": f"Task submitted for {request.container_id}", "task_id": task_id}
+
+    @app.post("/api/tasks/cancel", tags=["tasks"])
     async def cancel_task():
         service.task_manager.cancel()
-        return {"message": "Task cancelled"}
+        return {"message": "Active task cancelled"}
+
+    @app.post("/api/tasks/{task_id}/cancel", tags=["tasks"])
+    async def cancel_specific_task(task_id: str):
+        service.task_manager.cancel(task_id)
+        return {"message": f"Task {task_id} cancelled"}
+
+    @app.post("/api/tasks/{task_id}/priority", tags=["tasks"])
+    async def set_task_priority(task_id: str, priority: int = Body(..., embed=True)):
+        service.task_manager.change_priority(task_id, priority)
+        return {"message": f"Task {task_id} priority updated to {priority}"}
 
     return app
 

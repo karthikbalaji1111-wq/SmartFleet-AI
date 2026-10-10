@@ -309,14 +309,37 @@ export interface WorldState {
 
 export type SimulationStatus = 'stopped' | 'running' | 'paused';
 
+export type TaskState = 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
+
+export interface TaskRecord {
+  id: string;
+  type: 'storage' | 'retrieval';
+  priority: number;
+  status: TaskState;
+  container_id: string;
+  destination: string;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export interface TaskTelemetry {
+  queue: TaskRecord[];
+  history: TaskRecord[];
+  active_task: TaskRecord | null;
+  estop_active: boolean;
+}
+
 export interface SimulationSnapshot {
   status: SimulationStatus;
   ready: boolean;
   physics_hz: number;
   timestep: number;
   world: WorldState | null;
+  tasks?: TaskTelemetry | null;
   last_event_id: number;
 }
+
 
 export interface ServerEvent {
   id: number;

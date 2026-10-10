@@ -152,7 +152,7 @@ def test_start_drive_pause_reset_cycle_moves_the_physical_robot(client, config):
     deadline = time.monotonic() + 1.5
     while time.monotonic() < deadline:
         cmd = client.post("/api/robot/velocity", json={"linear": 0.6, "angular": 0.0, "duration": 0.5})
-        assert cmd.status_code == 200
+        if cmd.status_code != 200: print(client.post("/api/simulation/pause").json()); assert False
         body = cmd.json()
         assert body["accepted"] is True
         assert body["wheel_targets"]["left"] == pytest.approx(0.6 / config.robot.wheels.radius)
@@ -188,7 +188,7 @@ def test_turn_command_rotates_the_physical_robot(client):
     client.post("/api/simulation/start")
     deadline = time.monotonic() + 1.2
     while time.monotonic() < deadline:
-        assert client.post("/api/robot/velocity", json={"linear": 0.0, "angular": 1.0}).status_code == 200
+        res = client.post("/api/robot/velocity", json={"linear": 0.0, "angular": 1.0}); assert res.status_code == 200, res.json()
         time.sleep(0.15)
     _, heading1 = _pose(client)
     turned = (heading1 - heading0 + math.pi) % (2 * math.pi) - math.pi

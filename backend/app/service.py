@@ -14,7 +14,8 @@ from simulation.mechanisms import MECHANISMS, MechanismCommand, MechanismName
 from simulation.navigation.models import NavigationTelemetry, RouteModel
 from simulation.world import SimulationWorld
 from simulation.world import pybullet_available
-from simulation.tasks import TaskManager, TaskRequest, TaskTelemetry
+from simulation.tasks import TaskRequest
+from simulation.scheduler import TaskScheduler, TaskTelemetry
 
 from .schemas import (
     CommandResponse,
@@ -106,7 +107,9 @@ class SimulationService:
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or get_config()
         self.world = SimulationWorld(self.config)
-        self.task_manager = TaskManager(self.world)
+        import os
+        db_path = os.getenv("SMARTFLEET_DB_PATH", "tasks.db")
+        self.task_manager = TaskScheduler(self.world, db_path=db_path)
         self.events = EventLog()
         self.status: SimulationStatus = "stopped"
         self.init_error: str | None = None
@@ -186,6 +189,8 @@ class SimulationService:
         with self._lock:
             self._require_ready()
             self.world.reset()
+            if hasattr(self, 'task_manager') and hasattr(self.task_manager, 'set_estop'):
+                self.task_manager.set_estop(False)
             self.status = "stopped"
             self._last_logged_command = None
             p = self.config.robot.start_pose
@@ -244,6 +249,8 @@ class SimulationService:
             state = self.world.get_robot_state()
             moving = [name for name in MECHANISMS if getattr(state, name).state == "moving"]
             self.world.stop_mechanisms()
+            if hasattr(self, 'task_manager') and hasattr(self.task_manager, 'set_estop'):
+                self.task_manager.set_estop(True)
             self._last_logged_command = (0.0, 0.0)
             held = f"; {' and '.join(moving)} stopped" if moving else ""
             nav = "; navigation cancelled" if cancelled_nav else ""
@@ -414,6 +421,7 @@ class SimulationService:
                             self.events.add(level, "mechanism", message, self.world.sim_time)
                         self._drain_navigation_events()
                     except Exception as exc:
+                        import traceback; traceback.print_exc()
                         self.status = "paused"
                         self.events.add("error", "physics", f"Physics step failed, simulation paused: {exc}")
                 else:

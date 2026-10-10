@@ -12,7 +12,8 @@ from simulation.geometry import StaticBox
 from simulation.mechanisms import LiftPreset, MechanismName
 from simulation.navigation.models import NavigationTelemetry, RouteModel
 from simulation.robot_model import RobotDescription
-from simulation.tasks import TaskRequest, TaskTelemetry, TaskState
+from simulation.tasks import TaskRequest, TaskState
+from simulation.scheduler import TaskTelemetry, TaskRecord
 from simulation.state import WorldState
 
 _LIMITS = get_config().robot.limits

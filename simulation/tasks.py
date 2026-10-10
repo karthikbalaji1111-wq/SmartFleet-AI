@@ -27,6 +27,8 @@ TaskState = Literal[
 class TaskRequest(BaseModel):
     container_id: str
     destination: str
+    priority: int = 0
+    type: Literal["storage", "retrieval"] = "storage"
 
 class TaskTelemetry(BaseModel):
     state: TaskState

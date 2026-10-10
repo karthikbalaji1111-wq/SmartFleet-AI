@@ -200,6 +200,16 @@
         ],
         "mass": 2.0,
         "location": "A1-B1-L1-S1"
+      },
+      {
+        "id": "TOTE-0003",
+        "size": [
+          0.4,
+          0.3,
+          0.22
+        ],
+        "mass": 2.0,
+        "location": "outbound-stand"
       }
     ]
   },
