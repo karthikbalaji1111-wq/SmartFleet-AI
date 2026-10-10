@@ -9,6 +9,7 @@ import type {
   SimulationSnapshot,
   TelemetryMessage,
   WarehouseConfigResponse,
+  PerceptionResult,
 } from '../api/types';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline';
@@ -40,6 +41,7 @@ export function useSimulation() {
   const [route, setRoute] = useState<RouteModel | null>(null);
   const [navError, setNavError] = useState<string | null>(null);
   const [grid, setGrid] = useState<OccupancyGridData | null>(null);
+  const [perception, setPerception] = useState<PerceptionResult | null>(null);
   const snapshotRef = useRef<SimulationSnapshot | null>(null);
   const seenServerEvents = useRef(new Set<string>());
   const lastClientError = useRef<string | null>(null);
@@ -112,6 +114,7 @@ export function useSimulation() {
         snapshotRef.current = msg.snapshot;
         setSnapshot(msg.snapshot);
         if (msg.route_update) setRoute(msg.route_update.route);
+        if (msg.perception !== undefined) setPerception(msg.perception);
         for (const e of msg.events) {
           // id + timestamp: survives reconnects and distinguishes backend restarts.
           const key = `s-${e.id}-${e.timestamp}`;
@@ -274,6 +277,7 @@ export function useSimulation() {
     route,
     navError,
     grid,
+    perception,
     planRoute,
     navAction,
     loadGrid,

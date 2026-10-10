@@ -355,6 +355,7 @@ export interface TelemetryMessage {
   snapshot: SimulationSnapshot;
   events: ServerEvent[];
   route_update: { version: number; route: RouteModel | null } | null;
+  perception?: PerceptionResult | null;
 }
 
 export interface ControlResponse {
@@ -377,4 +378,20 @@ export interface ReadyResponse {
   pybullet_available: boolean;
   world_initialized: boolean;
   detail: string | null;
+}
+
+export interface DetectedObject {
+  category: string;
+  instance_id: string;
+  bbox: [number, number, number, number];
+  distance: number;
+  position: { x: number; y: number; z: number };
+  aabb_boundary_distance: number | null;
+}
+
+export interface PerceptionResult {
+  timestamp: number;
+  latency_ms: number;
+  rgb_base64: string;
+  objects: DetectedObject[];
 }

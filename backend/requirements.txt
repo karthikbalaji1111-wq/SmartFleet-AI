@@ -11,3 +11,4 @@ websockets
 # conda-forge first (conda install -c conda-forge pybullet) - pip then sees it
 # as already satisfied (the conda-forge build reports itself as 3.2.5).
 pybullet>=3.2.5
+opencv-python-headless

@@ -301,7 +301,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 if update is not None:
                     route_version = update[0]
                     route = RouteUpdate(version=update[0], route=update[1])
-                message = TelemetryMessage(snapshot=service.snapshot(), events=events, route_update=route)
+                message = TelemetryMessage(snapshot=service.snapshot(), events=events, route_update=route, perception=service.last_perception_result)
                 await ws.send_text(message.model_dump_json())
                 await asyncio.sleep(period)
 

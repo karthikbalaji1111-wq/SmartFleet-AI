@@ -247,3 +247,19 @@ class TelemetryMessage(BaseModel):
     snapshot: SimulationSnapshot
     events: list[EventModel]
     route_update: RouteUpdate | None = None  # only when the route changed since the last message
+    perception: PerceptionResult | None = None
+
+
+class DetectedObject(BaseModel):
+    category: str
+    instance_id: str
+    bbox: list[int]  # [x, y, w, h]
+    distance: float
+    position: dict[str, float]  # x, y, z in warehouse coords
+    aabb_boundary_distance: float | None = None
+
+class PerceptionResult(BaseModel):
+    timestamp: float
+    latency_ms: float
+    rgb_base64: str
+    objects: list[DetectedObject]

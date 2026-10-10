@@ -9,6 +9,7 @@ import { TelemetryPanel } from './components/TelemetryPanel';
 import { useSimulation } from './hooks/useSimulation';
 import { WarehouseViewport } from './scene/WarehouseViewport';
 import { WarehouseOperationsPanel } from './components/WarehouseOperationsPanel';
+import { PerceptionPanel } from './components/PerceptionPanel';
 
 export default function App() {
   const sim = useSimulation();
@@ -97,6 +98,7 @@ export default function App() {
             onJog={sim.jogMechanism}
             onStop={sim.stopMechanism}
           />
+          <PerceptionPanel perception={sim.perception} />
           <TelemetryPanel world={world} robotId={sim.config?.config.robot.id} />
         </aside>
       </main>

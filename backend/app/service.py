@@ -16,6 +16,7 @@ from simulation.world import SimulationWorld
 from simulation.world import pybullet_available
 from simulation.tasks import TaskRequest
 from simulation.scheduler import TaskScheduler, TaskTelemetry
+from simulation.perception import PerceptionSystem
 
 from .schemas import (
     CommandResponse,
@@ -26,6 +27,7 @@ from .schemas import (
     SimulationSnapshot,
     SimulationStatus,
     WheelTargets,
+    PerceptionResult,
 )
 
 _MOTION_WORDS: dict[MechanismName, tuple[str, str]] = {"lift": ("raising", "lowering"), "forks": ("extending", "retracting")}
@@ -116,6 +118,9 @@ class SimulationService:
         self._lock = threading.RLock()
         self._loop_task: asyncio.Task | None = None
         self._last_logged_command: tuple[float, float] | None = None
+        self._perception_task: asyncio.Task | None = None
+        self.perception_system = None
+        self.last_perception_result: PerceptionResult | None = None
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -144,6 +149,8 @@ class SimulationService:
             )
             self.events.add("info", "simulation", "Simulation is STOPPED (safe state). Press Start to run.")
         self._loop_task = asyncio.create_task(self._run_loop(), name="smartfleet-sim-loop")
+        self.perception_system = PerceptionSystem(self.world, self._lock)
+        self._perception_task = asyncio.create_task(self._perception_loop(), name="smartfleet-perception-loop")
 
     async def shutdown(self) -> None:
         if self._loop_task is not None:
@@ -151,6 +158,11 @@ class SimulationService:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._loop_task
             self._loop_task = None
+        if self._perception_task is not None:
+            self._perception_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._perception_task
+            self._perception_task = None
         with self._lock:
             self.world.shutdown()
             self.status = "stopped"
@@ -427,3 +439,16 @@ class SimulationService:
                 else:
                     accumulator = 0.0
             await asyncio.sleep(max(0.0, period - (time.perf_counter() - tick_start)))
+
+    async def _perception_loop(self) -> None:
+        period = 1.0 / 5.0
+        while True:
+            t0 = time.perf_counter()
+            if self.status == "running" and self.ready and self.perception_system:
+                loop = asyncio.get_running_loop()
+                result_dict = await loop.run_in_executor(None, self.perception_system.capture_and_process)
+                if result_dict:
+                    self.last_perception_result = PerceptionResult(**result_dict)
+            
+            elapsed = time.perf_counter() - t0
+            await asyncio.sleep(max(0.0, period - elapsed))
