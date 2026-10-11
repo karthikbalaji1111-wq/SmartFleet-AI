@@ -323,11 +323,24 @@ export interface TaskRecord {
   error: string | null;
 }
 
+export interface PickupTelemetry {
+  target_id: string;
+  stage: string;
+  lateral_error_cm: number;
+  heading_error_deg: number;
+  distance_m: number;
+  verified_pickup: boolean;
+  cargo_state: 'empty' | 'attached' | 'uncertain';
+  alignment_status: string;
+  failure_reason?: string | null;
+}
+
 export interface TaskTelemetry {
   queue: TaskRecord[];
   history: TaskRecord[];
   active_task: TaskRecord | null;
   estop_active: boolean;
+  pickup?: PickupTelemetry | null;
 }
 
 export interface SimulationSnapshot {

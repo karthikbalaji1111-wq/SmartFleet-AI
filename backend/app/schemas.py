@@ -258,6 +258,17 @@ class DetectedObject(BaseModel):
     position: dict[str, float]  # x, y, z in warehouse coords
     aabb_boundary_distance: float | None = None
 
+class PickupTelemetry(BaseModel):
+    target_id: str | None = None
+    stage: str = "idle"
+    lateral_error_cm: float | None = None
+    heading_error_deg: float | None = None
+    distance_m: float | None = None
+    alignment_status: str | None = None
+    verified_pickup: bool = False
+    cargo_state: Literal["empty", "attached", "uncertain"] = "empty"
+    failure_reason: str | None = None
+
 class PerceptionResult(BaseModel):
     timestamp: float
     latency_ms: float

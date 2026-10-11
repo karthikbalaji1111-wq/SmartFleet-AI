@@ -107,6 +107,44 @@ export function WarehouseOperationsPanel({ config, snapshot }: Props) {
               </span>
             ) : 'None'}
           </div>
+
+          {tasks.pickup && tasks.pickup.stage !== 'idle' && (
+            <div style={{
+              padding: '8px',
+              borderRadius: '4px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong style={{ color: '#38bdf8' }}>Perception Pickup: {tasks.pickup.stage}</strong>
+                <span style={{
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  fontSize: '10px',
+                  backgroundColor: tasks.pickup.verified_pickup ? '#166534' : '#854d0e',
+                  color: tasks.pickup.verified_pickup ? '#bbf7d0' : '#fef08a',
+                }}>
+                  {tasks.pickup.verified_pickup ? 'Verified ✓' : tasks.pickup.cargo_state}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
+                <span>Lat: {tasks.pickup.lateral_error_cm.toFixed(1)} cm</span>
+                <span>Yaw: {tasks.pickup.heading_error_deg.toFixed(1)}°</span>
+                <span>Dist: {tasks.pickup.distance_m.toFixed(2)} m</span>
+              </div>
+              <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                {tasks.pickup.alignment_status}
+              </div>
+              {tasks.pickup.failure_reason && (
+                <div style={{ fontSize: '11px', color: '#f87171' }}>
+                  Error: {tasks.pickup.failure_reason}
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <strong>Queue ({tasks.queue.length})</strong>
             {tasks.queue.map(t => (

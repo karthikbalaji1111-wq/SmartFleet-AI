@@ -1,9 +1,9 @@
 import sqlite3
 import time
 import uuid
-from typing import Literal, List, Optional
+from typing import Literal, List, Optional, Any
 from pydantic import BaseModel
-from .tasks import TaskManager, TaskRequest, TaskState
+from .tasks import TaskManager, TaskRequest, TaskState, PickupTelemetry
 
 TaskType = Literal["storage", "retrieval"]
 TaskStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
@@ -24,6 +24,7 @@ class TaskTelemetry(BaseModel):
     queue: List[TaskRecord]
     history: List[TaskRecord]
     estop_active: bool = False
+    pickup: Optional[PickupTelemetry] = None
 
 class TaskScheduler:
     def __init__(self, world, db_path="tasks.db"):
@@ -169,7 +170,8 @@ class TaskScheduler:
             active_task=self.active_task,
             queue=queue,
             history=history,
-            estop_active=self.estop_active
+            estop_active=self.estop_active,
+            pickup=self.task_manager.pickup_telemetry_data,
         )
 
     def set_estop(self, active: bool):

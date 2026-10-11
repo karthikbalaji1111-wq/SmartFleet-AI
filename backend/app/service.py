@@ -150,6 +150,7 @@ class SimulationService:
             self.events.add("info", "simulation", "Simulation is STOPPED (safe state). Press Start to run.")
         self._loop_task = asyncio.create_task(self._run_loop(), name="smartfleet-sim-loop")
         self.perception_system = PerceptionSystem(self.world, self._lock)
+        self.task_manager.task_manager.set_perception_system(self.perception_system)
         self._perception_task = asyncio.create_task(self._perception_loop(), name="smartfleet-perception-loop")
 
     async def shutdown(self) -> None:
