@@ -1,286 +1,285 @@
-# SmartFleet AI
+# SmartFleet AI: Autonomous Warehouse Robotics & Digital Twin
 
-Warehouse automation platform with a physics-backed 3D warehouse and an
-autonomous storage robot. **Current state: Milestone 2A — Functional lift and
-fork control** (on top of Milestone 1, the core foundation).
+[![Build & Tests](https://img.shields.io/badge/tests-241%20passed-brightgreen.svg)]()
+[![Python](https://img.shields.io/badge/python-3.11-blue.svg)]()
+[![Physics](https://img.shields.io/badge/physics-PyBullet%20DIRECT-orange.svg)]()
+[![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Three.js%20%7C%20Vite-blueviolet.svg)]()
+[![Deployment](https://img.shields.io/badge/deploy-Vercel-black.svg)]()
 
-- **Physics:** PyBullet (DIRECT mode, fixed 1/240 s timestep) owns the robot's
-  state. The robot moves only because its wheel motors drive it through contact
-  friction. The lift and forks move only through force- and velocity-limited
-  joint motors on their prismatic joints. There is no scripted or teleported
-  pose or joint value.
-- **Backend:** FastAPI serves the canonical config, simulation control, bounded
-  drive commands and a WebSocket telemetry stream.
-- **Frontend (Robot Lab):** React + TypeScript + Vite + Three.js. It renders
-  exactly what the backend reports: the robot's pose and joint positions, and
-  the warehouse built from the same collision boxes PyBullet uses.
+SmartFleet AI is an end-to-end autonomous mobile robot (AMR) warehouse automation platform and interactive 3D digital twin. The system models a high-fidelity warehouse environment in PyBullet physics (240 Hz fixed timestep), featuring an articulated differential-drive storage robot with a telescopic lift and forks, autonomous A* navigation, dynamic obstacle avoidance, priority task scheduling, RGB-D perception, and perception-guided closed-loop container pickup.
 
 ```
-config/warehouse.json ──► simulation/ (PyBullet world, URDF robot, diff-drive)
-        (single source        │  state read from PyBullet only
-         of truth)            ▼
-                         backend/ (FastAPI)  ── REST /api/*  ──►  frontend/
-                                             ── WS /ws/telemetry ─►  (Three.js)
+config/warehouse.json ──► simulation/ (PyBullet DIRECT world, 240 Hz physics)
+  (Single Source of       │  • Diff-drive AMR kinematics & contact dynamics
+       Truth)             │  • Prismatic lift mast & telescopic forks
+                          │  • A* planner & dynamic obstacle avoidance
+                          │  • Lift-mounted RGB-D camera & perception pipeline
+                          │  • Closed-loop alignment & autonomous pickup
+                          ▼
+                     backend/ (FastAPI)
+                          │  • REST API endpoints (/api/*)
+                          │  • SQLite Task Queue persistence (/api/tasks/*)
+                          │  • High-rate WebSocket telemetry (/ws/telemetry @ 30 Hz)
+                          ▼
+                     frontend/ (Robot Lab - React 19 + TypeScript + Vite + Three.js)
+                          • Real-time 3D warehouse digital twin rendering
+                          • Interactive manual & autonomous navigation controls
+                          • Live RGB perception feed & object localization overlay
+                          • Task scheduler management & telemetry inspection
 ```
 
-## Repository layout
+---
 
-| Path | Contents |
-|---|---|
-| `config/warehouse.json` | Canonical warehouse layout, robot dimensions/limits, simulation parameters |
-| `simulation/` | Config models, static collision geometry, URDF generation, differential-drive kinematics, PyBullet world |
-| `backend/app/` | FastAPI app (`main.py`), simulation service and loop (`service.py`), API schemas |
-| `frontend/` | Robot Lab UI (React, TypeScript, Vite, Three.js) |
-| `tests/` | Pytest suite (config, kinematics, robot model, physics motion, reset, API) |
+## Completed Engineering Milestones
 
-## Requirements (tested versions)
+The project incorporates seven engineering milestones:
 
-| Component | Version |
-|---|---|
-| Windows | 10/11 |
-| Miniforge (conda) | any recent |
-| Python | 3.11 (conda env `smartfleet`) |
-| PyBullet | 3.2.5 from **conda-forge** |
-| FastAPI / Starlette / Pydantic | 0.143.0 / 1.7.0 / 2.14.0 |
-| Uvicorn / websockets | 0.54.0 / 17.2 |
-| Pytest / httpx | 9.1.1 / 0.28.1 |
-| Node.js / npm | ≥ 20.19 or ≥ 22.12 (tested 24.17) / 11 |
-| React / Three.js | 19.3.0 / 0.186.1 |
-| Vite / TypeScript | 8.3.1 / 6.0.3 |
+1. **Milestone 1 — Core Foundation & Physics Simulation**
+   - Canonical warehouse configuration (`config/warehouse.json`) defining static collision geometry, racks, stands, and zones.
+   - PyBullet DIRECT-mode physics simulation with rigid-body contact dynamics at a fixed 240 Hz timestep.
+   - Articulated URDF mobile robot (differential-drive wheels, casters, chassis, rear mast, carriage, telescopic forks).
+   - FastAPI server with health checks, configuration endpoints, and WebSocket telemetry streaming at 30 Hz.
+   - React + Three.js Robot Lab frontend rendering real-time simulation state.
 
-> **Why conda for PyBullet?** PyPI ships **no Windows wheels** for PyBullet, so
-> `pip install pybullet` tries to compile it and fails without the Visual C++
-> Build Tools. conda-forge provides a prebuilt Windows package.
+2. **Milestone 2A — Functional Lift & Fork Mechanism Control**
+   - Physics-driven prismatic joint motors with force and velocity limits (lift: 450 N @ 0.30 m/s; forks: 300 N @ 0.25 m/s).
+   - Bounded positioning, incremental jogs, travel-limit saturation, and stop/hold controls.
+   - Safety monitoring: stall detection (0.5 s), motor overload protection (0.1 s), and chassis-tilt interlocks (0.05 rad).
+   - Shelf height presets aligning forks 2 cm above rack levels (L1–L4).
 
-## Installation (Windows)
+3. **Milestone 2B — Autonomous Navigation & Path Following**
+   - 2D warehouse occupancy grid automatically built from physical collision bounding boxes with robot safety inflation.
+   - 8-directional A* grid path planning with octile distance heuristics.
+   - Trajectory generator with curvature-bounded turning, smooth acceleration/deceleration profiles, and arrival tolerance.
+   - Differential-drive path-following controller with dead-man safety timeout and parking brake engagement.
 
-1. **Install Miniforge** from <https://github.com/conda-forge/miniforge> (or
-   `winget install CondaForge.Miniforge3`), then open the **Miniforge Prompt**.
+4. **Milestone 3 — Cargo Handling, Staging & Shelf Docking**
+   - Physically simulated containers/totes with contact friction, mass properties, and stacking surfaces.
+   - Container attachment and mechanical locking onto forks during transit.
+   - Automated pick-and-place workflows: approach, mast alignment, fork extension, fork lift, retraction, and staging delivery.
 
-2. **Get the code**
+5. **Milestone 4 — Dynamic Obstacle Detection & Avoidance**
+   - Dynamic obstacle simulation with real-time velocity and trajectory tracking.
+   - Proactive safety boundary (safety bubble) around the robot.
+   - Fast reactive braking (< 0.5 s reaction time) when an obstacle breaches the safety zone.
+   - Dynamic local replanning to route around unexpected obstructions without losing task state.
 
-   ```bat
-   git clone https://github.com/karthikbalaji1111-wq/SmartFleet-AI.git
-   cd SmartFleet-AI
-   ```
+6. **Milestone 5 — Priority Task Scheduler & Persistence**
+   - Task management service supporting priority queues (`HIGH`, `NORMAL`, `LOW`).
+   - SQLite persistence layer (`tasks.db`) ensuring task state survives backend restarts.
+   - Task lifecycle management: `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`.
+   - Preemption handling, task cancellation, and execution audit history.
 
-3. **Create the Python environment** (once):
+7. **Milestone 6 — Simulated Visual Perception Pipeline**
+   - Lift-mounted simulated RGB-D camera tracking the carriage pose in real time.
+   - Efficient 320x240 capture at a dedicated 5 Hz background thread safely decoupled from the 240 Hz physics loop.
+   - Metric depth buffer transformation from PyBullet depth buffers using camera projection matrices.
+   - PyBullet segmentation ID mapping paired with OpenCV contour and bounding box analysis.
+   - 3D warehouse world coordinate reprojection for detected objects and AABB boundary distance error metrics.
 
-   ```bat
-   conda create -n smartfleet -c conda-forge python=3.11 pybullet
-   conda activate smartfleet
-   python -m pip install -r backend\requirements-dev.txt
-   ```
+8. **Milestone 7 — Perception-Guided Autonomous Pickup**
+   - Closed-loop autonomous target acquisition: identifies container IDs and spatial positions from the perception pipeline.
+   - Two-phase approach: coarse A* navigation to an observation waypoint followed by visual servoing.
+   - Fine visual alignment: iterative lateral offset and heading angle correction facing the target container pocket.
+   - Physical pickup sequencing: carriage adjustment to slot height, fork extension into the pocket, vertical lift, and retraction.
+   - Multi-criteria pickup verification: physical contact point validation and vertical load displacement checks.
+   - Telemetry integration and frontend perception overlay with real-time bounding boxes and state indicators.
 
-   pip sees PyBullet as already installed and does not try to compile it.
+---
 
-4. **Install the frontend** (once):
+## System Architecture
 
-   ```bat
-   cd frontend
-   npm install
-   cd ..
-   ```
+### Directory Layout
 
-## Running (two terminals)
+```
+SmartFleet-AI/
+├── config/
+│   └── warehouse.json         # Single source of truth: layout, robot kinematics, limits
+├── simulation/
+│   ├── world.py               # PyBullet world, static geometry, object tracking
+│   ├── robot.py               # URDF generation, drive kinematics, mechanism motors
+│   ├── navigation.py          # Occupancy grid, A* planning, trajectory tracking
+│   ├── perception.py          # RGB-D camera capture, metric depth, 3D reprojection
+│   ├── pickup.py              # Perception-guided fine alignment & pickup controller
+│   └── obstacles.py           # Dynamic obstacle simulation & safety zones
+├── backend/
+│   ├── app/
+│   │   ├── main.py            # FastAPI application & route definitions
+│   │   ├── service.py         # 240 Hz simulation background service & lock coordination
+│   │   ├── tasks.py           # Task queue manager, priority scheduler, SQLite persistence
+│   │   ├── schemas.py         # Pydantic request/response schemas
+│   │   └── database.py        # SQLite database connection & schema migrations
+│   └── requirements-dev.txt   # Backend Python dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── components/        # React UI panels (Controls, Viewport, Perception, Tasks)
+│   │   ├── api/
+│   │   │   └── client.ts      # REST and WebSocket client with configurable endpoints
+│   │   ├── App.tsx            # Main Robot Lab application layout
+│   │   └── main.tsx           # React entrypoint
+│   ├── package.json           # Frontend dependencies & scripts
+│   └── vite.config.ts         # Vite build configuration & local dev proxy
+├── tests/
+│   ├── test_kinematics.py     # Differential-drive kinematics tests
+│   ├── test_navigation.py     # A* planner & trajectory tests
+│   ├── test_mechanisms.py     # Lift and fork joint motor tests
+│   ├── test_tasks.py          # Task queue & persistence tests
+│   ├── test_perception.py     # RGB-D metric depth & reprojection tests
+│   ├── test_pickup_alignment.py # Perception-guided pickup lifecycle tests
+│   └── test_pickup_evaluation.py# Quantitative pickup accuracy benchmarks
+├── vercel.json                # Vercel monorepo deployment configuration
+└── README.md                  # System documentation
+```
 
-Run both from the repository root.
+---
 
-**Terminal 1: backend** (Miniforge Prompt):
+## Local Setup & Installation
 
-```bat
+### Prerequisites
+
+| Component | Tested Version | Notes |
+|---|---|---|
+| OS | macOS / Linux / Windows 10/11 | Cross-platform |
+| Python | 3.11 | In Conda environment (`smartfleet`) |
+| PyBullet | 3.2.5 | From **conda-forge** |
+| Node.js / npm | ≥ 20.19 or ≥ 22.12 / npm 10+ | Required for frontend |
+
+> **Note on PyBullet Installation:**
+> Always install PyBullet via `conda-forge` (`conda install -c conda-forge pybullet`). Compiling PyBullet directly via pip requires C++ build toolchains which may fail on some operating systems.
+
+### 1. Backend Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/karthikbalaji1111-wq/SmartFleet-AI.git
+cd SmartFleet-AI
+
+# Create conda environment with PyBullet
+conda create -n smartfleet -c conda-forge python=3.11 pybullet -y
+conda activate smartfleet
+
+# Install Python backend dependencies
+python -m pip install -r backend/requirements-dev.txt
+```
+
+### 2. Frontend Setup
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+---
+
+## Running the Application
+
+Start the backend and frontend in two separate terminals from the repository root:
+
+### Terminal 1: Backend Server
+
+```bash
 conda activate smartfleet
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-If plain PowerShell can't run `conda activate`, call the environment's Python
-directly:
+- Health check: [http://127.0.0.1:8000/api/ready](http://127.0.0.1:8000/api/ready)
+- Interactive OpenAPI Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-```powershell
-& "$env:USERPROFILE\miniforge3\envs\smartfleet\python.exe" -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-```
+### Terminal 2: Frontend Client (Robot Lab)
 
-Check it: <http://127.0.0.1:8000/api/ready> should return `"ready": true`.
-Interactive API docs are at <http://127.0.0.1:8000/docs>.
-
-**Terminal 2: frontend:**
-
-```bat
+```bash
 cd frontend
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173>. Vite proxies `/api` and `/ws` to the backend,
-so no CORS setup is needed.
+- Open the dashboard at [http://127.0.0.1:5173](http://127.0.0.1:5173).
+- The Vite development server automatically proxies `/api` and `/ws` to the local FastAPI backend.
 
-Production build: `npm run build` (type-checks, then bundles into `frontend/dist`).
+---
 
-## Tests
+## Automated Test Suites
 
-```bat
+The test suite validates kinematics, physics stability, safety limits, mechanism dynamics, perception accuracy, and autonomous pickup performance:
+
+```bash
 conda activate smartfleet
-python -m pytest
+
+# Run full test suite (241 passed)
+pytest
+
+# Run Milestone 7 pickup alignment tests (17 passed)
+pytest tests/test_pickup_alignment.py -v
+
+# Run Milestone 7 quantitative evaluation benchmarks (5 passed)
+pytest tests/test_pickup_evaluation.py -v
+
+# Run visual perception pipeline tests
+pytest tests/test_perception.py -v
 ```
 
-The suite drives the real physics. For example, it checks that a 0.5 m/s
-request for 3 s moves the robot about 1.37 m along its heading, that in-place
-turns rotate without translating, that per-step motion is continuous (no
-teleporting) and explained by wheel rotation, that the dead-man timeout and
-braking work, and that reset is deterministic.
+### Test Coverage Highlights
+- **Kinematics & Physics:** Differential-drive odometry, wheel slip, parking-brake holding, tilt protection.
+- **Mechanisms:** Lift/fork travel bounds, force limits, stall/overload detection, preset alignment.
+- **Navigation:** A* path optimality, trajectory tracking error < 5 cm, collision-free obstacle clearance.
+- **Perception Pipeline:** Metric depth accuracy (< 1.5 cm error), 3D coordinate reprojection, AABB boundary distance.
+- **Autonomous Pickup:** End-to-end target acquisition, lateral alignment within ±2.5 cm, orientation error < 0.05 rad, physical contact verification, post-lift load elevation checks.
 
-The lift and fork tests (`tests/test_mechanisms.py`, `tests/test_api_mechanisms.py`)
-advance the physics and check measured joint states. They cover:
-- monotonic motion at the configured speed limits;
-- arrival at the target;
-- rejection of out-of-range or malformed targets;
-- joint limits holding even when validation is bypassed;
-- Stop holding a mechanism mid-travel;
-- a lift jammed under a rack shelf being stopped without tipping the robot;
-- driving with the lift raised;
-- the WebSocket streaming the intermediate joint positions.
+---
 
-If PyBullet is missing, the physics tests are reported as skipped and the rest
-still run.
+## Frontend Deployment on Vercel
 
-## Using the Robot Lab
+The frontend is configured for deployment to **Vercel** as a single-page application (SPA).
 
-1. The header shows **Backend** (connection), **Physics** (PyBullet ready) and
-   the simulation state. The simulation always starts **STOPPED**: physics is
-   frozen and no motion is requested.
-2. Press **Start** to run physics in real time. **Pause** freezes it.
-   **Reset** rebuilds the world with the robot back at its home pose (STOPPED).
-3. **Manual drive** (only while running): hold ▲ ▼ ⟲ ⟳ or **W A S D** /
-   arrow keys. Commands are re-sent while held and carry a 0.4 s dead-man
-   timeout, so releasing (or losing the connection) stops the robot. It does
-   not affect the lift or forks. **Space** or the **STOP** pad button is an
-   e-stop: it brakes the chassis *and* holds the lift and forks. The sliders set
-   speed and turn rate within the configured limits.
-4. **Lift & forks** (only while running). Each mechanism card shows the
-   *measured* position, the target, velocity and a state badge: HOLDING,
-   RAISING/LOWERING, EXTENDING/RETRACTING, or BLOCKED. All of these come from
-   PyBullet.
-   - **Slider + "Move to"** sends an absolute target.
-   - **− / + 5 cm** jogs the target. A jog past a travel limit saturates at
-     the limit, and the event log flags it.
-   - **Lower/Raise fully** and **Retract/Extend fully** go to the travel limits.
-   - **Stop** holds the mechanism where it is.
-   - **Lift presets** (Home, Shelf L1–L4, Stand) align the fork surface 2 cm
-     above each real shelf or stand top.
-   - **Stop lift & forks** holds both.
+### Configuration Details (`vercel.json`)
+The repository includes a root `vercel.json` configured for monorepo builds:
+- **Build Command:** `cd frontend && npm install && npm run build`
+- **Output Directory:** `frontend/dist`
+- **Framework:** Vite
+- **Routing:** SPA rewrites redirecting `/(.*)` to `/index.html`
 
-   The 3D robot moves only when the reported joint positions change.
-5. **Telemetry** shows position, heading, measured linear and angular velocity
-   (with the commanded values), wheel speeds, parking-brake state, lift and fork
-   positions and the container pose, all from PyBullet.
-6. **Viewport:** drag to orbit, right-drag to pan, scroll to zoom. **Overview**
-   / **Top** set the camera; **Follow robot** keeps it centred.
-7. The **Event log** combines server events with client events. Server events
-   include initialization, start/pause/reset, drive and mechanism commands,
-   rejected requests, and blocked mechanisms with the obstacle they touched.
-   Client events cover the connection and errors.
+### Connecting Frontend to Backend
+The frontend connects to the backend using environment variables configured in `frontend/src/api/client.ts`:
+- `VITE_BACKEND_URL`: Base HTTP URL for the FastAPI backend (e.g., `https://your-backend-service.com` or `http://127.0.0.1:8000`)
+- `VITE_WS_URL`: WebSocket URL for real-time telemetry (e.g., `wss://your-backend-service.com/ws/telemetry` or `ws://127.0.0.1:8000/ws/telemetry`)
 
-### Trying the lift and forks
+When running in local development mode without environment variables, the frontend defaults to `http://127.0.0.1:8000` and `ws://127.0.0.1:8000/ws/telemetry`.
 
-With the simulation running:
-1. Click **Shelf L3**. The carriage climbs at 0.30 m/s until the fork surface
-   reads about 1.32 m and the badge turns to HOLDING.
-2. Click **Extend fully**. The forks run out to 0.60 m at 0.25 m/s.
-3. Click **Raise fully**, then **Stop** after a second. The lift holds at
-   the position where it stopped.
-4. Try a jog past a limit: at 1.60 m, click **+ 5 cm**. The target stays
-   at 1.60 m and the event log notes that it was clamped.
-5. Collision check:
-   1. Drive the robot until it faces a rack, close enough that the extended
-      forks reach under a shelf.
-   2. Raise the lift. The forks stop against the shelf's underside, the badge
-      shows BLOCKED, and the event log names the shelf (e.g. `C2/shelf-1`).
-   3. Lower the lift to clear the fault.
-6. **Pause** or **STOP** (Space) holds both mechanisms. **Reset** returns them
-   to their default positions.
+> **Important Deployment Architecture Note:**
+> Vercel hosts the static React + Three.js client-side application. The SmartFleet AI backend runs a continuous 240 Hz PyBullet physics simulation engine and persistent WebSockets, which cannot execute inside serverless functions.
+>
+> To use the deployed Vercel frontend with a live backend:
+> 1. Run the backend locally and use a secure tunnel (e.g., `ngrok http 8000`), configuring the resulting HTTPS/WSS URLs in Vercel's environment variables (`VITE_BACKEND_URL` and `VITE_WS_URL`), OR
+> 2. Deploy the backend Docker container to a continuous cloud platform supporting persistent processes and WebSockets (such as Render, Railway, Fly.io, or AWS EC2).
 
-## API
+---
 
-| Method | Path | Purpose |
+## REST API Summary
+
+| Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | Liveness |
-| GET | `/api/ready` | Readiness (200 when physics is initialized and the robot model is validated, otherwise 503 with a reason) |
-| GET | `/api/config/warehouse` | Canonical config, derived collision boxes, robot model, lift presets |
-| GET | `/api/simulation/state` | Current snapshot (status, sim time, robot and container state) |
-| POST | `/api/simulation/start` / `pause` / `reset` | Simulation control (pause also holds lift and forks) |
-| POST | `/api/robot/velocity` | `{"linear": m/s, "angular": rad/s, "duration": s}`, bounded (±1.0 m/s, ±1.5 rad/s, 0.05–2.0 s); 409 unless running, 422 if malformed |
-| POST | `/api/robot/stop` | Cancel the drive request and brake (lift and forks unaffected) |
-| POST | `/api/robot/estop` | Stop all motion: brake the chassis and hold lift and forks (any state) |
-| POST | `/api/robot/lift/target` | `{"position": m}`, 0–1.60; 422 outside the limits, 409 unless running |
-| POST | `/api/robot/lift/jog` | `{"delta": m}`, non-zero, within ±0.25; the target saturates at the travel limit |
-| POST | `/api/robot/lift/stop` | Hold the lift at its measured position (any state) |
-| POST | `/api/robot/forks/target` | `{"position": m}`, 0–0.60 |
-| POST | `/api/robot/forks/jog` | `{"delta": m}`, non-zero, within ±0.20 |
-| POST | `/api/robot/forks/stop` | Hold the forks at their measured position |
-| POST | `/api/robot/mechanisms/stop` | Hold both lift and forks |
-| WS | `/ws/telemetry` | Snapshots at 30 Hz plus new events |
+| `GET` | `/api/health` | System health and service status |
+| `GET` | `/api/ready` | Readiness probe (verifies PyBullet physics and robot model) |
+| `GET` | `/api/config/warehouse` | Canonical warehouse layout, rack positions, and robot limits |
+| `GET` | `/api/simulation/state` | Current snapshot of robot pose, mechanisms, and simulation time |
+| `POST` | `/api/simulation/start` | Start or resume real-time physics simulation |
+| `POST` | `/api/simulation/pause` | Freeze simulation and hold mechanism states |
+| `POST` | `/api/simulation/reset` | Reset simulation world, robot pose, and mechanisms to default |
+| `POST` | `/api/robot/velocity` | Command chassis linear and angular velocity with dead-man timeout |
+| `POST` | `/api/robot/stop` | Command active braking on chassis drive motors |
+| `POST` | `/api/robot/estop` | Emergency stop: immediate chassis brake and mechanism lock |
+| `POST` | `/api/robot/lift/target` | Command absolute carriage lift position (0.0 – 1.60 m) |
+| `POST` | `/api/robot/forks/target` | Command absolute telescopic fork extension (0.0 – 0.60 m) |
+| `POST` | `/api/robot/navigate` | Request autonomous navigation to target (x, y, yaw) coordinates |
+| `POST` | `/api/robot/pickup` | Initiate perception-guided autonomous pickup sequence |
+| `GET` | `/api/perception/state` | Retrieve latest camera metadata, detections, and 3D estimates |
+| `GET` | `/api/tasks` | List all tasks with status and priority |
+| `POST` | `/api/tasks` | Enqueue a new automated warehouse mission |
+| `POST` | `/api/tasks/{id}/cancel`| Cancel a pending or running task |
+| `WS` | `/ws/telemetry` | High-frequency telemetry stream (30 Hz) |
 
-Each mechanism in the telemetry (`robot.lift`, `robot.forks`) reports these
-values, all measured by PyBullet:
-- `position` and `velocity`
-- `target`, `error` and `at_target`
-- `state`: `holding`, `moving` or `blocked`
-- `fault`: `stalled`, `overload` or `tilt`
-- `applied_force`, plus its limits and default position
+---
 
-`robot.fork_surface_height` is read from the fork link's pose.
+## License
 
-## Conventions and robot specification
-
-- **World frame:** right-handed, Z up, metres/radians. The origin is the floor
-  centre, +X points east (towards the docks) and +Y north. Yaw is
-  counter-clockwise from +X.
-- **Robot body frame:** +X forward, +Y left, origin at the drive-axle midpoint
-  (the base centre of mass), so telemetry `z` is about one wheel radius.
-- **Robot SF-1:** chassis 0.90 × 0.56 × 0.24 m, 87 kg total. Two driven wheels
-  (r = 0.10 m, track 0.62 m) and two frictionless casters. Rear mast 1.92 m.
-  Lift carriage is a prismatic joint, 0–1.60 m (fork surface 0.34–1.94 m above
-  the floor), with a 450 N motor at 0.30 m/s. Telescopic forks are a prismatic
-  joint, 0–0.60 m, with a 300 N motor at 0.25 m/s. Retracted forks stay inside
-  the footprint.
-- **Lift/fork protection:** a mechanism that can't reach its target is
-  stopped where it is and reported as `blocked` (with the obstacle it touched)
-  in any of three cases:
-  - it stalls for 0.5 s;
-  - its motor sits at its force limit for 0.1 s (overload);
-  - the chassis tilts more than 0.05 rad while it moves.
-
-  The motor ratings are deliberately modest. A 2000 N lift jammed under a
-  shelf was found to lever the 87 kg robot 26° off the floor.
-- **Motion limits:** 1.0 m/s, 1.5 rad/s, accelerating at 1.0 m/s² and 3 rad/s²,
-  braking at 2.0 m/s² and 5 rad/s². A parking brake holds the wheels once the
-  robot is at rest.
-- **Warehouse:** 24 × 16 m floor, 8 four-level tote racks, loading and delivery
-  zones with stands, one sample tote on the inbound stand.
-
-Every value lives in `config/warehouse.json`. The URDF is generated from it at
-runtime, and the frontend draws the robot and racks from the API, so the layers
-cannot drift apart.
-
-## Known limitations (Milestone 2A)
-
-- The lift and forks move physically, but there is **no load-handling
-  workflow** yet. Nothing is picked up, carried or stored, and the sample tote
-  isn't attached to the forks.
-- There's no drive interlock: the robot can drive with forks extended or the
-  lift raised. The physics handles collisions, and the tilt protection stops
-  mechanism motion, but nothing prevents the drive command.
-- Manual drive is a temporary verification tool. There is no navigation,
-  obstacle avoidance or collision prevention: you can drive into racks, and
-  the physics will stop the robot.
-- The backend runs one simulation instance shared by **all** connected
-  browsers. Two people driving at once control the same robot.
-- The 3D view renders the latest 30 Hz telemetry sample without interpolation,
-  so motion can look slightly stepped.
-- The frontend bundle is about 0.8 MB because Three.js isn't code-split yet.
-
-## Next milestone (proposed: Milestone 2B)
-
-Navigation foundation: an occupancy grid derived from the same static geometry,
-an A* planner, and a path-following controller that drives the existing
-differential-drive interface. Inventory, AI integration and the full
-pickup-and-delivery workflow follow later.
+This project is developed for educational and portfolio demonstration purposes as part of an advanced robotics software engineering curriculum.
