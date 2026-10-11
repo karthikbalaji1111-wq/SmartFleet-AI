@@ -28,10 +28,12 @@ function describeDetail(detail: unknown): string {
   return JSON.stringify(detail);
 }
 
+const API_BASE = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? '';
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...init?.headers } });
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers: { 'content-type': 'application/json', ...init?.headers } });
   } catch {
     throw new ApiError('Backend unreachable', 0);
   }
@@ -47,7 +49,7 @@ export const api = {
   warehouseConfig: () => request<WarehouseConfigResponse>('/api/config/warehouse'),
   ready: async (): Promise<ReadyResponse> => {
     // 503 still carries a ReadyResponse body describing why.
-    const res = await fetch('/api/ready');
+    const res = await fetch(`${API_BASE}/api/ready`);
     return (await res.json()) as ReadyResponse;
   },
   start: () => request<ControlResponse>('/api/simulation/start', { method: 'POST' }),
@@ -91,6 +93,10 @@ export const api = {
 };
 
 export function telemetryUrl(): string {
+  const configuredWs = import.meta.env.VITE_WS_URL as string | undefined;
+  if (configuredWs) {
+    return `${configuredWs.replace(/\/$/, '')}/ws/telemetry`;
+  }
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${window.location.host}/ws/telemetry`;
 }
